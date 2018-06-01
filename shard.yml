@@ -1,0 +1,13 @@
+name: SomeRedis
+version: 0.1.0
+
+authors:
+  - Andrey Konovalov <konovalovaa@nspk.ru>
+
+targets:
+  SomeRedis:
+    main: src/SomeRedis.cr
+
+crystal: 0.23.1
+
+license: MIT

@@ -1,0 +1,6 @@
+Comparing hget vs. get
+          Rate    hget get_k_s   get_k     get
+hget    1.61/s      --     -4%    -43%    -46%
+get_k_s 1.68/s      4%      --    -40%    -44%
+get_k   2.82/s     75%     68%      --     -5%
+get     2.98/s     85%     77%      6%      --
