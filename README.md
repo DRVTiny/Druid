@@ -1,6 +1,6 @@
-# SomeRedis
+# Druid
 
-TODO: Write a description here
+Druid is a fast version of itself, but rewritten in Crystal
 
 ## Installation
 
