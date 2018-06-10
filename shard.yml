@@ -1,13 +1,21 @@
-name: SomeRedis
-version: 0.1.0
+name: Druid
+version: 0.8.0
 
 authors:
-  - Andrey Konovalov <konovalovaa@nspk.ru>
+  - Andrey Konovalov <drvtiny@gmail.com>
 
 targets:
-  SomeRedis:
-    main: src/SomeRedis.cr
+  Druid:
+    main: src/druid_mp.cr
+    
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+  auto_msgpack:
+    github: kostya/auto_msgpack 
+  redis:
+    github: stefanwille/crystal-redis
 
-crystal: 0.23.1
+crystal: 0.24.2
 
 license: MIT
