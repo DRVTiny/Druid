@@ -1,6 +1,12 @@
 # Druid
 
-Druid is a fast version of itself, but rewritten in Crystal
+Druid is a web service which assemblies JSON representing all objects
+which is direct or indirect depnedencies of the specified IT Service,
+including its "associations" (hosts, hostGroups, triggers).
+To be useful requires calculation engine itself which is written in perl 
+and not included in this project (it is external entity, i.e. another
+project). This engine will be uploaded to github soon, but now you can 
+simply ask me to provide all necessary code.
 
 ## Installation
 
