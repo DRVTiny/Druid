@@ -34,4 +34,4 @@ TODO: Write development instructions here
 
 ## Contributors
 
-- [[your-github-name]](https://github.com/[your-github-name]) Andrey Konovalov - creator, maintainer
+- [[DRVTiny]](https://github.com/DRVTiny) Andrey Konovalov - creator, maintainer
