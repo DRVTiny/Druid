@@ -10,8 +10,12 @@ simply ask me to provide all necessary code.
 
 ## Installation
 
-TODO: Write installation instructions here
-
+```
+crystal deps && \
+crystal build --release src/druid_mp.cr && \
+sudo mv ./druid_mp /usr/local/bin/druid
+# TODO: provide service file for systemd  
+```
 ## Usage
 
 TODO: Write usage instructions here
