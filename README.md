@@ -1,6 +1,6 @@
 # Druid
 
-Druid is a fast version of itself, but rewritten in Crystal
+Druid is a hierarchy monitoring dashboard based on standard Zabbix IT Services
 
 ## Installation
 
