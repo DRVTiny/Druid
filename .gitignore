@@ -4,8 +4,12 @@
 /.shards/
 /data/
 /tmp/
+*/conf/*
 DEADJOE
+.#*
 *~
 *.bak
-*.pl
-.#*
+*.old
+*.orig
+*.sh
+

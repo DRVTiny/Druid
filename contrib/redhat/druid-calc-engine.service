@@ -1,0 +1,17 @@
+[Unit]
+Description=Druid Calc Engine
+After=syslog.target network.target redis.service
+
+[Service]
+Type=simple
+Environment="DRUID_MODE=production"
+ExecStart=/usr/local/bin/druid-calc-engine.pl
+StandartError=syslog
+StandartOutput=syslog
+SyslogIdentifier=druid-calc-engine
+User=zabbix
+Group=zabbix
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
