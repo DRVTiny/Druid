@@ -6,9 +6,9 @@
 # This software is licensed under GPL v3
 #
 package Monitoring::Zabipi;
-use v5.16.1;
+use v5.10.1;
 use utf8;
-binmode $_ => ':utf8' for *STDOUT, *STDERR;
+#binmode(STDOUT, ":utf8");
 use strict;
 use warnings;
 use DBI;
@@ -115,7 +115,7 @@ sub new {
   }
   foreach my $cnfPar ( grep defined($cnfPar2cnfKey{$_}), keys %{$hlOtherPars} ) {
    my ($v,$t,$k)=($hlOtherPars->{$cnfPar},@{$cnfPar2cnfKey{$cnfPar}}{'type','key'});
-   unless ($v=~m/$rx{$t}/io) {
+   if (defined($v) and $v!~m/$rx{$t}/io) {
     setErr('Wrong parameter passed to the "new" constructor: '.$cnfPar.' must be '.$t);
     return 0
    }
@@ -256,7 +256,7 @@ sub zbx_get_dbhandle {
        setErr 'Insufficient database connection properties given, but method or its parameter requires direct database connection';
        return undef
       }
-      return DBI->connect(@{$Config{'DBI'}}{'dsn','login','pass'},{'RaiseError' => 1}) || die 'DB open error: '.$DBI::errstr
+      return DBI->connect(@{$Config{'DBI'}}{'dsn','login','pass'},{'RaiseError' => 1, 'mysql_enable_utf8' => 1}) || die 'DB open error: '.$DBI::errstr
    }->()
 }
 
@@ -478,7 +478,6 @@ sub zbx {
   return 0;
  }
  $req->{'params'}{'searchWildcardsEnabled'}=1 if ($method=~m/\.get$/ && ref($req->{'params'}{'search'}) eq 'HASH') and $Config{'flSearchWildcardsEnabled'} and ! defined $req->{'params'}{'searchWildcardsEnabled'};
- $req->{'params'}//=[];
  # Redefine global config variables if it is specified as a 3-rd parameter to zbx() ->
  my %ConfigCopy=%Config;
  my $confPars=shift;
