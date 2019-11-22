@@ -376,14 +376,9 @@ sub new {
             $sqlReqConf->{'exec'} = sub {
                 my %opts = @_;
                 my $subst = $opts{'subst'} // {};
-                my $sth = $dbh->prepare( my $realQuery = ( $baseQuery =~ s<\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}>[$subst->{$1} // 'NULL']grex ) );
+                my $sth = $dbh->prepare( $baseQuery =~ s<\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}>[$subst->{$1} // 'NULL']grex );
                 my @method_args = delete( $opts{'as_hash_refs'} ) ? ({}) : ();
-                my $rv = 
-                try {
-                    $sth->execute(@{$opts{'binds'} // []});
-                } catch {
-                    confess sprintf 'Failed SQL: <<%s>>, Options: <<%s>>', $realQuery, Dumper(\%opts);
-                };
+                my $rv = $sth->execute(@{$opts{'binds'} // []});
                 if ( $flIsSelect ) {
                     my $method = $opts{'method'} // DFLT_FETCH_METHOD;
                     my $r = $sth->$method(@method_args);
@@ -477,17 +472,29 @@ sub __query {
 
 sub __nextid {
     my ($self, $what2do, $tableName) = @_;
+    $what2do eq 'get' or $what2do eq 'incr' or confess 'dont know how to do this: ' . $what2do;
     my $dbhGlob = $self->{'zapi'}->ldbh;
     my $idAttr = $idOps{$tableName}{'id_attr'};
-    if ( $what2do eq 'get' ) {
-        $dbhGlob->selectall_arrayref(<<'EOSQL', {}, $tableName, $idAttr)->[0][0] + 1;
-SELECT nextid FROM ids WHERE table_name=? AND field_name=? FOR UPDATE
-EOSQL
-    } elsif ( $what2do eq 'incr' ) {
-        $dbhGlob->do(<<'EOSQL', {}, $_[3] // 1, $tableName, $idAttr);
-UPDATE ids SET nextid=nextid+? WHERE table_name=? AND field_name=?
+    my $lastId;
+    for (my $c = 0; $c < 2; $c++) {
+        last if
+            $lastId = eval { $dbhGlob->selectall_arrayref(
+                'SELECT nextid FROM ids WHERE table_name=? AND field_name=? FOR UPDATE',
+                {}, 				$tableName,    $idAttr
+            )->[0][0] };
+        $dbhGlob->do(sprintf(<<'EOSQL', $tableName, $idAttr, $idAttr, $tableName));
+INSERT INTO ids ("table_name","field_name","nextid") 
+VALUES ('%s', '%s', (SELECT CASE COUNT(t.lastid) WHEN 0 THEN 1 ELSE MAX(t.lastid) END FROM (SELECT MAX("%s") lastid FROM %s) t GROUP BY t.lastid))
 EOSQL
     }
+    defined($lastId) or confess sprintf 'cant determine nextid for table <<%s>> and field <<%s>>', $tableName, $idAttr;
+        
+    $what2do eq 'get'
+        ? ($lastId + 1)
+        : $dbhGlob->do(
+            q<UPDATE ids SET nextid=nextid+? WHERE table_name=? AND field_name=?>,
+            {}, 		$_[3] // 1, 	   $tableName, 	    $idAttr
+          )
 }
 
 sub __lastDBHError {
