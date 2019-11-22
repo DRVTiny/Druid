@@ -6,6 +6,7 @@ use warnings;
 use boolean;
 use Ref::Util qw(is_hashref is_arrayref is_coderef);
 use Scalar::Util qw(looks_like_number);
+use Try::Tiny;
 use Carp qw(confess);
 use Data::Dumper qw(Dumper);
 
@@ -75,7 +76,12 @@ sub __prep_and_exec {
   my ($method_name, @method_args) = @{$method};
 #  say ">> ${$p_query} << method_name=$method_name method_args=".Dumper(\@method_args)." binds=" . Dumper($binds);
   my $sth = $dbh->prepare(${$p_query});
-  my $res = $sth->execute(@{$binds // []});
+  my $res =
+  try {
+    $sth->execute(@{$binds // []});
+  } catch {
+    confess sprintf join("\n\t" => '', 'when trying to execute SQL query: %s', 'using binds: %s'), ${$p_query}, Dumper($binds);
+  };
   $method_name eq 'do'
     ? $res
     : $sth->$method_name(@method_args);
