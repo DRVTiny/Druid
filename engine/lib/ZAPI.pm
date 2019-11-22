@@ -43,6 +43,9 @@ sub new {
         },
         'postgresql' => {
             'dsnTemplate' => 'dbi:Pg:host=%s;dbname=%s',
+            'append2options' => {
+                'pg_server_prepare' => NO,
+            },
             'after_connect_do' => [ q<SET CLIENT_ENCODING TO 'UTF8'> ],
         },
     };
