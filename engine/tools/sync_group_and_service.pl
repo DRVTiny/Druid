@@ -45,12 +45,15 @@ BEGIN {
   $ARGV[0] eq '-TL' and unshift(@INC, '.'), shift(@ARGV);
 }
 
+use FindBin;
+use lib $FindBin::Bin . '/../lib';
+
 use Monitoring::Zabipi qw(zbx zbx_last_err zbx_api_url zbx_get_dbhandle);
 use Monitoring::Zabipi::ITServices 1.1;
 no warnings;
 use Data::Dumper;
 use JSON::XS qw(encode_json);
-use Log4perl::KISS;
+use Log::Log4perl::KISS;
 use Getopt::Std qw(getopts);
 
 getopts 'l:x' => \my %opt;
@@ -115,7 +118,7 @@ my %txtTrgErrStatus = (
 );
 
 my @groups = $itsvc->get_deps_by_type( $rootSvcID, 'g' );
-fatal_ 'Cant get hostgroups under %s. Reason: %s', $rootSvcID,
+logdie_ 'Cant get hostgroups under %s. Reason: %s', $rootSvcID,
   $groups[0]{'error'}
   if @groups == 1 and exists( $groups[0]{'error'} );
 
