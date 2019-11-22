@@ -376,9 +376,14 @@ sub new {
             $sqlReqConf->{'exec'} = sub {
                 my %opts = @_;
                 my $subst = $opts{'subst'} // {};
-                my $sth = $dbh->prepare( $baseQuery =~ s<\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}>[$subst->{$1} // 'NULL']grex );
+                my $sth = $dbh->prepare( my $realQuery = ( $baseQuery =~ s<\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}>[$subst->{$1} // 'NULL']grex ) );
                 my @method_args = delete( $opts{'as_hash_refs'} ) ? ({}) : ();
-                my $rv = $sth->execute(@{$opts{'binds'} // []});
+                my $rv = 
+                try {
+                    $sth->execute(@{$opts{'binds'} // []});
+                } catch {
+                    confess sprintf 'Failed SQL: <<%s>>, Options: <<%s>>', $realQuery, Dumper(\%opts);
+                };
                 if ( $flIsSelect ) {
                     my $method = $opts{'method'} // DFLT_FETCH_METHOD;
                     my $r = $sth->$method(@method_args);
