@@ -767,19 +767,25 @@ sub add_zo_attrs {
     return $svc;
 }
 
+sub get_valid_sid {
+    my ( $self, $name_or_sid ) = @_;
+    $name_or_sid =~ m/[^\d]/
+        ? $self->get_sid_by_name( $name_or_sid )
+        : do {
+            $self->__query('isSvcExists?', binds => [ $name_or_sid ]) or return; 
+            $name_or_sid 
+        };
+}
+
 sub rename {
     my ( $self, $from, $to ) = @_;
-    my $flFromIsName = $from =~ m/[^\d]/;
-    unless ($flFromIsName) {
-        return { 'error' => 'No such IT Service' }
-          unless 
-        my $svcName = $self->get_sid_by_name($from)
-          or return { 'error' => 'No such IT Service'};
-        if ( my $zoSfx = zobjFromSvcName($svcName) and !zobjFromSvcName($to) ) {
-            $to .= ' ' . $zoSfx;
-        }
+    my $sidFrom = $self->get_valid_sid( $from ) or return {'error' => 'No such IT Service'};
+    defined( my $svcName = eval { $self->get_name_by_sid( $sidFrom ) } )
+        or return {'error' => $@ ? "while trying to get IT Service name for sid=${sidFrom}: $@" : 'IT Service possibly was removed while trying to rename it'};
+    if ( my $zoSfx = zobjFromSvcName($svcName) and !zobjFromSvcName($to) ) {
+        $to .= ' ' . $zoSfx;
     }
-    $self->__query('renSvcBy' . ( $flFromIsName ? 'Name' : 'ID' ), binds => [ $to, $from ]);
+    $self->__query('renSvcByID', binds => [ $to, $sidFrom ]);
 }
 
 sub create_links {
