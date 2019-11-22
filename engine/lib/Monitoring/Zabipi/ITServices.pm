@@ -482,10 +482,16 @@ sub __nextid {
                 'SELECT nextid FROM ids WHERE table_name=? AND field_name=? FOR UPDATE',
                 {}, 				$tableName,    $idAttr
             )->[0][0] };
-        $dbhGlob->do(sprintf(<<'EOSQL', $tableName, $idAttr, $idAttr, $tableName));
+            
+        my $insQuery = sprintf(<<'EOSQL', $tableName, $idAttr, $idAttr, $tableName);
 INSERT INTO ids ("table_name","field_name","nextid") 
 VALUES ('%s', '%s', (SELECT CASE COUNT(t.lastid) WHEN 0 THEN 1 ELSE MAX(t.lastid) END FROM (SELECT MAX("%s") lastid FROM %s) t GROUP BY t.lastid))
 EOSQL
+        try {
+            $dbhGlob->do($insQuery);
+        } catch {
+            confess 'SQL QUERY FAILED: <<' . $insQuery . '>>. Reason provided by server: ' . $_;
+       };
     }
     defined($lastId) or confess sprintf 'cant determine nextid for table <<%s>> and field <<%s>>', $tableName, $idAttr;
         
