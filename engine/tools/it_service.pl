@@ -24,15 +24,8 @@ use Getopt::Std qw(getopts);
 use JSON::XS;
 use Carp qw(croak);
 no warnings;
-my %dbType2DBDName = ('postgresql' => 'Pg', 'mysql' => 'mysql');
-my $apiPars        = {
-    'wildcards' => 'true',
-    'dbDSN' =>
-        sprintf('dbi:%s:database=%s;host=%s', $dbType2DBDName{$SETENV{'DB_TYPE'} // DFLT_DB_TYPE}, @SETENV{'DB_NAME', 'DB_HOST'}),
-    'dbLogin'    => $SETENV{'DB_LOGIN'}  // $SETENV{'DB_USER'},
-    'dbPassword' => $SETENV{'DB_PASSWD'} // $SETENV{'DB_PASS'} // $SETENV{'DB_PASSWORD'},
-};
 
+my $apiPars        = { 'wildcards' => 'true' };
 my $firstarg = shift;
 if ($firstarg eq '-x') {
     $apiPars->{'debug'}  = 1;
