@@ -19,21 +19,10 @@ use LWP::UserAgent;
 use URI::Encode;
 use Monitoring::Zabipi::Common qw(fillHashInd to_json_str doItemNameExpansion);
 use Data::Dumper qw(Dumper);
-sub new;
-sub setErr;
-sub zbx;
-sub zbx_api_url;
-sub zbx_api_version;
-sub zbx_last_err;
-sub zbx_json_raw;
-sub getDefaultMethodParams;
-sub doItemNameExpansion;
-sub http_;
-sub queue_get;
-sub zbx_get_dbhandle;
-sub fillHashInd;
+use subs qw/setErr zbx zbx_api_url zbx_api_version zbx_last_err zbx_json_raw getDefaultMethodParams doItemNameExpansion http_ queue_get zbx_get_dbhandle fillHashInd/;
+use experimental 'smartmatch';
 
-our @EXPORT_OK=qw(new zbx zbx_last_err zbx_json_raw zbx_api_url zbx_api_version zbx_get_dbhandle);
+our @EXPORT_OK = qw(zbx zbx_last_err zbx_json_raw zbx_api_url zbx_api_version zbx_get_dbhandle);
 
 use constant {
         DEFAULT_ITEM_DELAY=>30,

@@ -910,9 +910,9 @@ sub gen_svc_tree_branch {
       ? is_plain_hashref( $svc->{'nodes'} )
           ? +{
               map {
-                  my @kv = each $svc->{'nodes'};
+                  my @kv = each %{$svc->{'nodes'}};
                   scalar( $kv[1]{'name'} || $kv[0] ) => $kv[1]
-              } 1 .. keys( $svc->{'nodes'} )
+              } 1 .. keys %{$svc->{'nodes'}}
           }
           : is_plain_arrayref( $svc->{'nodes'} )
         ? +{ map { $_->{'name'} => $_ } @{ $svc->{'nodes'} } }
@@ -946,7 +946,7 @@ sub gen_svc_tree_branch {
         );
 
 # Hint: 'triggerid' is absent in %svcSettings, so we need to explicitly put it in @k
-        my @k = grep exists $svcSettings{$_}, keys $svc;
+        my @k = grep exists $svcSettings{$_}, keys %{$svc};
         @svcSettings{@k} = @{$svc}{@k} if @k;
         my $res = $self->create(
             {
@@ -973,7 +973,7 @@ sub gen_svc_tree_branch {
     my $parId = $svc->{'serviceid'};
 
     # say Dumper $svcNodes;
-    while ( my ( $svcName, $svc ) = each $svcNodes ) {
+    while ( my ( $svcName, $svc ) = each %{$svcNodes} ) {
         $self->gen_svc_tree_branch( $svc, $parId, $svcName );
     }
     return $svc;
