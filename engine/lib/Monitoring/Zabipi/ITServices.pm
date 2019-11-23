@@ -484,7 +484,7 @@ sub __nextid {
             )->[0][0] };
             
         my $insQuery = sprintf(<<'EOSQL', $tableName, $idAttr, $idAttr, $tableName);
-INSERT INTO ids ("table_name","field_name","nextid") 
+INSERT INTO ids (table_name,field_name,nextid) 
 VALUES ('%s', '%s', (SELECT CASE COUNT(t.lastid) WHEN 0 THEN 1 ELSE MAX(t.lastid) END FROM (SELECT MAX("%s") lastid FROM %s) t GROUP BY t.lastid))
 EOSQL
         try {
