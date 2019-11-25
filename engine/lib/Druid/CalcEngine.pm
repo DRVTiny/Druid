@@ -83,7 +83,7 @@ my %SVC_ROOT_NODE = (
     'algorithm' => SVC_ALGO_ALL_FOR_PROBLEM
 );
 
-my $ltrs = join('' => keys $zobjTypes{'by_letter'} );
+my $ltrs = join('' => keys %{$zobjTypes{'by_letter'}} );
 my $rxZOExt = qr/^(?:.+\s+)?\(([${ltrs}])(\d+)\)$/;
 my $rxZOExt4s = qr/\s*\(([${ltrs}])(\d+)\)$/;
 my $json = JSON::XS->new;
@@ -175,7 +175,7 @@ EOLOGCONF
         croak 'First argument must be: SCALAR, HASHREF or ARRAYREF' if $r_arg0 and !($r_arg0 eq 'HASH' or $r_arg0 eq 'ARRAY');
         if ( $r_arg0 eq 'HASH' ) {
             my $parHsh = $r_arg0 eq 'HASH'? $arg0 : {@_};
-            while ( my ($par, $val) = each $parHsh ) {
+            while ( my ($par, $val) = each %{$parHsh} ) {
                 croak 'Cant set undefined or read-only or protected property: '.$par
                     unless $par and exists($props{$par}) and !( ($props{$par}{'protected'} and !$flCallerIsTrusted) or $props{$par}{'read_only'} );
                 $props{$par}{'setter'}
@@ -197,8 +197,8 @@ EOLOGCONF
         }
     }, $class;
     $slf->({'logger' => $logger});
-    debug { '***************',__PACKAGE__,'is ready to use ******************' };
-    for my $zotypeConf ( values $zobjTypes{'by_name'} ) {
+    debug_  '*************** %s is ready to use ******************', __PACKAGE__;
+    for my $zotypeConf ( values %{$zobjTypes{'by_name'}} ) {
         my $zoltr = $zotypeConf->{'letter'};
         $props{'st'}{'value'}{'getzobj'}{$zoltr} = $dbhR->prepare(
             sprintf('select %s from %s where %s=?', join(',' => @{$zotypeConf->{'xattrs'}}), @{$zotypeConf}{'table','id'})
@@ -305,12 +305,12 @@ sub reloadCache2 {
         $assocs{$zoltr}{$zoid} = $svcid;
     }
     __purge_svcs(\%svcs, @delSvcTrgs) if @delSvcTrgs;
-    my @rootDeps = grep defined $_, map $svcs{$_}, keys $slf->('underRootServices');
+    my @rootDeps = grep defined $_, map $svcs{$_}, keys %{$slf->('underRootServices')};
     $svcs{0} = {%SVC_ROOT_NODE, 'dependencies'=>{map { $_->{'under_root'}=1; $_->{'serviceid'}=>1 } @rootDeps}};
     my %zo=(
         map {
             my ($zoltr, $zoids)=($_, $assocs{$_});
-            my $zobjs = $slf->get_many_zobjs_from_src($zoltr, keys $zoids);
+            my $zobjs = $slf->get_many_zobjs_from_src($zoltr, keys %{$zoids});
                 $zoltr => 
                     $assocWithServiceIdAttr->{$zoltr}
                         ? +{map { my ($oid, $me)=each $zobjs; $me->{'serviceid'}=$zoids->{$oid}; $oid => $me } 1..keys $zobjs}
