@@ -144,7 +144,7 @@ EOMETHOD
     while (my ($methodCmnName, $methodGen) = each %methodsGen) {
         no strict 'refs';
         my $methodTmplCode = sprintf("sub {\n%s\n}", $methodGen->{'template'});
-        for my $methodCodePatch ( values $methodGen->{'variants'} ) {
+        for my $methodCodePatch ( values %{$methodGen->{'variants'}} ) {
             my $methodGenName = $methodCmnName . ($methodCodePatch->{'suffix'} // '');
             *{__PACKAGE__ . '::' . $methodGenName} = eval($methodTmplCode =~ s%<<([A-Z][A-Z_]+[A-Z](?:[0-9]{1,3})?)>>%$methodCodePatch->{lc $1} // ''%ger) // die $@;
         }
