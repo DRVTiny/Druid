@@ -417,7 +417,7 @@ sub new {
                 'hndl' => sub {
                     my ($r, $message, $xtopic)=@_;
                     $redCastObj->log_debug(sprintf "got message from ptr#%s handler", refaddr($r));
-                    $_->($message => $xtopic) for values %{do {
+                    $_->($message => $xtopic) for values %{+do {
                         ($_=eval { $redCastObj->subscribers->{$xtopic} } and is_plain_hashref($_) and %{$_} and $_) or {}
                     }};
                 }
