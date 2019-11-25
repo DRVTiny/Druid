@@ -307,13 +307,13 @@ sub reloadCache2 {
     __purge_svcs(\%svcs, @delSvcTrgs) if @delSvcTrgs;
     my @rootDeps = grep defined $_, map $svcs{$_}, keys %{$slf->('underRootServices')};
     $svcs{0} = {%SVC_ROOT_NODE, 'dependencies'=>{map { $_->{'under_root'}=1; $_->{'serviceid'}=>1 } @rootDeps}};
-    my %zo=(
+    my %zo = (
         map {
             my ($zoltr, $zoids)=($_, $assocs{$_});
             my $zobjs = $slf->get_many_zobjs_from_src($zoltr, keys %{$zoids});
                 $zoltr => 
                     $assocWithServiceIdAttr->{$zoltr}
-                        ? +{map { my ($oid, $me)=each $zobjs; $me->{'serviceid'}=$zoids->{$oid}; $oid => $me } 1..keys $zobjs}
+                        ? +{map { my ($oid, $me) = each %{$zobjs}; $me->{'serviceid'} = $zoids->{$oid}; $oid => $me } 1..keys %{$zobjs}}
                         : $zobjs
         } keys %assocs
     );
@@ -368,24 +368,24 @@ sub writeZObjs2SepDbs {
     my $redC = $slf->('redC');
     my ($ztype, $redisDbIndex);
     try {
-        while ( my ($zoltr, $zobjs) = each $zo ) {
+        while ( my ($zoltr, $zobjs) = each %{$zo} ) {
             my $zot = $zoTypes->{'by_letter'}{$zoltr};
             ( is_plain_hashref($zot) and $ztype = $zot->{'type'} )
                 or return [undef, {'error' => sprintf 'ZObj type <<%s>> is not supported by %s', $zoltr, __PACKAGE__}];
-            debug { 'Processing zobjs type: <<%s>>', $ztype };
+            debug_ 'Processing zobjs type: <<%s>>', $ztype;
             defined( $redisDbIndex = $zot->{'redis_db'} ) 
                 or return [undef, {'error' => sprintf 'Cant write ZObjs of type <<%s>> to Redis: database not specified in zobjTypes', $ztype}];
-            debug { "select( $redisDbIndex )"};
+            debug_ "select( $redisDbIndex )";
             $redC->select( $redisDbIndex );
             $redC->multi;
-            debug { "flushdb( $redisDbIndex )"};
+            debug_ "flushdb( $redisDbIndex )";
             $redC->flushdb;
             $redC->write_not_null( $zobjs => sub {
                 if ( $_[1] ) {
                     $redC->discard;
                     confess "Redis reports problem while writing ${ztype}-objects to cache: $_[1]"
                 }
-                debug { '%i objects of type "%s" was written to Redis Db #%d', scalar(keys $zobjs), $ztype, $redisDbIndex };
+                debug_ '%i objects of type "%s" was written to Redis Db #%d', scalar(keys %{$zobjs}), $ztype, $redisDbIndex;
             });
             debug { "before wait_all_responses" };
             $redC->wait_all_responses;
