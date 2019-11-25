@@ -4,6 +4,7 @@ use 5.16.1;
 use strict;
 use warnings;
 use utf8;
+use experimental 'smartmatch';
 BEGIN { binmode $_, ':utf8' for *STDOUT,*STDERR; }
 use Fcntl;
 use Scalar::Util 	qw(blessed refaddr);
@@ -542,14 +543,14 @@ sub actualizeTrigValues {
                 } else {
                     ()
                 }
-            } 1..keys $prvTrigs
+            } 1 .. keys %{$prvTrigs}
         ) {
             debug { 'diffTrigs:', __json( \@diffTrigs ) };
             $redcTrigsDb->write( map @{$_}[0,1], @diffTrigs );
             my $updServices = $slf->doCalcSvcTreeChanges( \@diffTrigs );
             $slf->get_redc_for('services')->write( $updServices )
                 ? do {
-                    info_ 'Updated %d services state in Redis', scalar(keys $updServices);
+                    info_ 'Updated %d services state in Redis', scalar(keys %{$updServices});
                     [DONE, undef]
                   }
                 : do {
@@ -594,7 +595,7 @@ sub doCalcSvcTreeChanges {
     } @{$diffTrigs} };
     debug { 'affectedSvcs based on diffTrigs:', __json($affectedSvcs) };
     # %knownLFK is a filtered version of %affectedSvcs containing only serviceid => lostfunk pairs, where lostfunk is defined (i.e. corresponding to triggers)
-    my %knownLFK = map { my @t = each %{$affectedSvcs}; defined($t[1]) ? (@t) : () } 1..keys $affectedSvcs;
+    my %knownLFK = map { my @t = each %{$affectedSvcs}; defined($t[1]) ? (@t) : () } 1 .. keys %{$affectedSvcs};
     debug { '(initial) knownLFK=%s', __json(\%knownLFK) };
     delete @{$affectedSvcs}{keys %knownLFK};
     my @nodeServiceIds = keys %{$affectedSvcs};
@@ -773,7 +774,7 @@ sub doCalcLostFunK {
                                             if ( %{$deps2wipe->{'s'}} ) {
                                                 while (my ($zoltr, $zoids) = each %{$deps2wipe}) {
                                                     debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys($zoids) )};
-                                                    delete @{$zo->{$zoltr}}{keys $zoids}
+                                                    delete @{$zo->{$zoltr}}{keys %{$zoids}}
                                                 }
                                             }
                                             $svc->{'dependencies'} = []
@@ -992,7 +993,7 @@ sub __get_dbh {
             $_->($dbh, \%execAfterOpts) for @{$exec_after};
         }
         when ( 'HASH' ) {
-            $_->[1]->( $_->[0] => $dbh, \%execAfterOpts ) for map [each $exec_after], 1 .. keys %{$exec_after};
+            $_->[1]->( $_->[0] => $dbh, \%execAfterOpts ) for map [each %{$exec_after}], 1 .. keys %{$exec_after};
         }
         when ( 'CODE' ) {
             $exec_after->($dbh, \%execAfterOpts)
