@@ -587,7 +587,7 @@ sub doCalcSvcTreeChanges {
         (
             map {
                 $_ => [ $curLFK, $curLFK >= LFK_OK ? $trg->{'lastchange'} : $now_ts ],
-            } keys %{+{ map { pop($_) => 1 } @{$svcPath} }}
+            } keys %{+{ map { pop(@{$_}) => 1 } @{$svcPath} }}
         ),
         map {
             $_ => undef
@@ -637,7 +637,7 @@ sub doCalcSvcTreeChanges {
         for grep exists($affectedSvcs->{$_}), keys %{$slf->('servicesOfInterest')};
 
     debug { 'affectedSvcs after doRecalcLostFunk():', __no_deps_json( $affectedSvcs ) };
-    delete @{$affectedSvcs}{map { my ($svcid, $v) = each %{$affectedSvcs}; defined($v) ? () : $svcid } 1..keys($affectedSvcs)};
+    delete @{$affectedSvcs}{map { my ($svcid, $v) = each %{$affectedSvcs}; defined($v) ? () : $svcid } 1..keys %{$affectedSvcs}};
     return $affectedSvcs;
 } # <- doCalcSvcTreeChanges()
 
@@ -656,7 +656,7 @@ sub doRecalcLostFunk {
     my ($prvLFK, $svcDeps) = @{$svc}{qw(lostfunk dependencies)};
     # We dont need to know previous lostfunk for services associated with triggers, so... 
     # you cant pass any triggers in $affectedSvcs or you have to define know previous state of the trigger (which is not very informative)
-    defined($prvLFK) or logdie { 'WTF, why "lostfunk" is not defined in your service <<%s>> ?', __json($svc) };
+    defined($prvLFK) or logdie sub { 'WTF, why "lostfunk" is not defined in your service <<%s>> ?', __json($svc) };
     if ( $prvLFK == ($svc->{'lostfunk'} = LFK_LOOP_PROTECT) ) {
         logdie { 'We detected a loop while desc to <<%s>> service subtree. Any further lostfunk calculations is impossible!', $svcid };
         return
