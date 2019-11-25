@@ -1,8 +1,12 @@
 package Clean::On::Exit;
+use strict;
+use warnings;
 use Exporter qw(import);
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(refaddr weaken blessed);
 use Carp qw(confess);
 use File::Spec;
+use subs qw/make_mrproper/;
+
 use constant { TRUE => 1, FALSE => undef };
 
 our @EXPORT = qw/clean_on_exit wipe_on_exit/;
@@ -20,8 +24,11 @@ sub clean_on_exit {
         } elsif ($ref0 eq 'CODE') {
             $toClean{'code'}{'pocs'}{refaddr $_[0]} //= [$toClean{'code'}{'index'}++ // 0, my $poc = shift, my $args = \@_];
             sub { $poc->(@{$args}) };
+        } elsif (blessed $_[0]) {
+            $toClean{'objs'}{'to_destroy'}{refaddr $_[0]} //= [$toClean{'objs'}{'index'}++ // 0, weaken(my $obj = $_[0])];
+            $_[0]
         } else {
-            confess "Cant clean anything using reference of type <<$r>>, sorry :)"
+            confess "Cant clean anything using reference of type <<$ref0>>, sorry :)"
         }
     };
     
@@ -46,13 +53,16 @@ sub clean_on_exit {
 
 sub make_mrproper {
     if (%toClean) {
-        if (%{$toClean{'files'}}) {
+        if (exists $toClean{'files'}) {
             my $paths = $toClean{'files'}{'paths'};
-            unlink($_) for sort {$paths->{$a} <=> $paths->{$b}} keys $paths;
+            unlink($_) for sort {$paths->{$a} <=> $paths->{$b}} keys %{$paths};
         }
-        if (%{$toClean{'code'}}) {
-            $_->[1]->(@{$_->[2]}) for sort {$a->[0] <=> $b->[0]} values $toClean{'code'}{'pocs'};
+        if (exists $toClean{'code'}) {
+            $_->[1]->(@{$_->[2]}) for sort {$a->[0] <=> $b->[0]} values %{$toClean{'code'}{'pocs'}};
         }
+        if (exists $toClean{'objs'}) {
+            defined($_[1]) and $_->[1]->DESTROY() for sort {$a->[0] <=> $b->[0]} values %{$toClean{'objs'}{'to_destroy'}};
+        }        
     }
     %toClean = ()
 }

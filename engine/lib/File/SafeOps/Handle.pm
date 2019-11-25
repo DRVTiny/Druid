@@ -104,16 +104,16 @@ sub close_me {
 }
 
 sub scan_hash {
-    my $hr=shift;
+    my $hr = shift;
     return if ref $_[0] or !(defined $_[0] and ref $hr eq 'HASH');
-    my $pS=\$_[0];
+    my $pS = \$_[0];
     return $hr->{$$pS} if exists $hr->{$$pS};
-    my $lps=length($$pS);
-    for (grep {length != $lps} keys $hr) {
+    my $lps = length($$pS);
+    for (grep {length != $lps} keys %{$hr}) {
         return $hr->{$_} if 
           length > $lps
-            ? substr($_,0,$lps) eq $$pS
-            : substr($$pS,0,length) eq $_
+            ? substr($_, 0, $lps) eq $$pS
+            : substr($$pS, 0, length) eq $_
     }
     return
 }

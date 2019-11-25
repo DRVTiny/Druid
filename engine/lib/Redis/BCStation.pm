@@ -16,7 +16,6 @@ use Mojo::Redis2;
 use Mojo::IOLoop;
 use Log::Log4perl qw(:easy);
 use Log::Log4perl::Level;
-use Log::Dispatch;
 use Scalar::Util qw(weaken refaddr blessed looks_like_number);
 use Data::Dumper;
 use constant {
@@ -91,7 +90,10 @@ sub new {
                     my %LOGCONF=('category'=>__PACKAGE__=~s/::/./gr);
                     Log::Log4perl->easy_init({'level' => $DEBUG, 'layout' => '%d{HH:mm:ss} | %d{dd.MM.yyyy} | %P | %C | %p | %m%n'})
                         ? Log::Log4perl->get_logger(__PACKAGE__)
-                        : Log::Dispatch->new('outputs'=>[['Screen','min_level' => 'debug', 'newline' => 1, 'stderr' => 1]])
+                        : do {
+                            require Log::Dispatch;
+                            Log::Dispatch->new('outputs'=>[['Screen','min_level' => 'debug', 'newline' => 1, 'stderr' => 1]])
+                          };
                 };
     }->($pars{'logger'}) or confess('Cant get logger and cant prepare it myself. No log - no work!');
     my (%props, %aeh, %queUnPub, $redCastObj);
