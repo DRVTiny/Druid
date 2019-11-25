@@ -515,7 +515,7 @@ sub actualizeTrigValues {
         $stGetActualTrigs->execute();
         $stGetActualTrigs->rows or logdie_( 'No triggers associated with IT-services found in source db' );
         my $curTrigs = $stGetActualTrigs->fetchall_hashref( 'triggerid' );
-        debug { '[%f sec.] %d current trigger values retrieved', __hp_timer(), scalar(keys $curTrigs) };
+        debug { '[%f sec.] %d current trigger values retrieved', __hp_timer(), scalar(keys %{$curTrigs}) };
         debug { __hp_timer(); 'Retrieving trigger values stored in Redis (i.e. old, previous values)' };
         
         my $redcTrigsDb = $slf->get_redc_for('triggers');
@@ -525,11 +525,11 @@ sub actualizeTrigValues {
             +{ map { $triggerids[$c++] => decodeByTag($_) } $redcTrigsDb->mget( @triggerids ) };
         };
         
-        debug { '[%f sec.] %d previous trigger values retrieved. Calculating diffTrigs based on prv_trg and cur_trg comparison', __hp_timer(), scalar(keys $prvTrigs) };
+        debug { '[%f sec.] %d previous trigger values retrieved. Calculating diffTrigs based on prv_trg and cur_trg comparison', __hp_timer(), scalar(keys %{$prvTrigs}) };
         
         if (
             my @diffTrigs = map { 
-                my ($triggerid, $ptrg) = each $prvTrigs;
+                my ($triggerid, $ptrg) = each %{$prvTrigs};
                 if ( defined(my $ctrg = $curTrigs->{$triggerid}) ) {
                     my ($plfk, $clfk) = map __get_trigger_lostfunk, $ptrg, $ctrg;
                     ($plfk == $clfk)
@@ -583,19 +583,21 @@ sub doCalcSvcTreeChanges {
     my $affectedSvcs = +{ map {
         my ($triggerid, $trg, $curLFK) = @{$_};
         my $svcPath = $trg->{'svcpath'};
-        (map {
-            $_ => [ $curLFK, $curLFK >= LFK_OK ? $trg->{'lastchange'} : $now_ts ],
-        } keys +{ map { pop($_)=>1 } @{$svcPath} }),
+        (
+            map {
+                $_ => [ $curLFK, $curLFK >= LFK_OK ? $trg->{'lastchange'} : $now_ts ],
+            } keys %{+{ map { pop($_) => 1 } @{$svcPath} }}
+        ),
         map {
             $_ => undef
         } map @{$_}, @{$svcPath}
     } @{$diffTrigs} };
     debug { 'affectedSvcs based on diffTrigs:', __json($affectedSvcs) };
     # %knownLFK is a filtered version of %affectedSvcs containing only serviceid => lostfunk pairs, where lostfunk is defined (i.e. corresponding to triggers)
-    my %knownLFK = map { my @t = each $affectedSvcs; defined($t[1]) ? (@t) : () } 1..keys $affectedSvcs;
+    my %knownLFK = map { my @t = each %{$affectedSvcs}; defined($t[1]) ? (@t) : () } 1..keys $affectedSvcs;
     debug { '(initial) knownLFK=%s', __json(\%knownLFK) };
     delete @{$affectedSvcs}{keys %knownLFK};
-    my @nodeServiceIds = keys $affectedSvcs;
+    my @nodeServiceIds = keys %{$affectedSvcs};
     # Goal is to read all of the affected objects, because in general case we will need to write it back with updated "lostfunk" attribute
     $slf->get_redc_for('services')->read({}, @nodeServiceIds, keys(%knownLFK), sub {
         $affectedSvcs = $_[0];
@@ -618,7 +620,7 @@ sub doCalcSvcTreeChanges {
 
         # Read (to %knownLFK) lostfunks of all dependent services for the "affected" ones
         if ( my @notAffectedDeps = 
-              grep ! exists($affectedSvcs->{$_}), keys +{ map {$_ => 1} map @{($_->{'dependencies'} || [])}, values $affectedSvcs }
+              grep ! exists($affectedSvcs->{$_}), keys %{+{ map {$_ => 1} map @{($_->{'dependencies'} || [])}, values %{$affectedSvcs} }}
         ) {
             debug { 'notAffectedDeps=[', join(', ' => @notAffectedDeps),']' };
             $slf->get_redc_for('services')->read_not_null(@notAffectedDeps, sub {
@@ -631,10 +633,10 @@ sub doCalcSvcTreeChanges {
     
     debug { "knownLFK before doRecalcLostFunk():\n%s\naffectedSvcs as passed to doRecalcLostFunk():\n%s", __json(\%knownLFK), __no_deps_json($affectedSvcs) };
     doRecalcLostFunk( $affectedSvcs, \%knownLFK, $_ )
-        for grep exists($affectedSvcs->{$_}), keys $slf->('servicesOfInterest');
+        for grep exists($affectedSvcs->{$_}), keys %{$slf->('servicesOfInterest')};
 
     debug { 'affectedSvcs after doRecalcLostFunk():', __no_deps_json( $affectedSvcs ) };
-    delete @{$affectedSvcs}{map { my ($svcid, $v) = each $affectedSvcs; defined($v) ? () : $svcid } 1..keys($affectedSvcs)};
+    delete @{$affectedSvcs}{map { my ($svcid, $v) = each %{$affectedSvcs}; defined($v) ? () : $svcid } 1..keys($affectedSvcs)};
     return $affectedSvcs;
 } # <- doCalcSvcTreeChanges()
 
@@ -769,7 +771,7 @@ sub doCalcLostFunK {
                                         if ( my $deps = __va_array_ref($svc->{'dependencies'}) ) {
                                             __list_deps_to_wipe($zo, $svcid, $deps, my $deps2wipe = {});
                                             if ( %{$deps2wipe->{'s'}} ) {
-                                                while (my ($zoltr, $zoids) = each $deps2wipe) {
+                                                while (my ($zoltr, $zoids) = each %{$deps2wipe}) {
                                                     debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys($zoids) )};
                                                     delete @{$zo->{$zoltr}}{keys $zoids}
                                                 }
@@ -877,7 +879,7 @@ sub DESTROY {
     my $locks = $slf->('semlocks');    
     return 1 unless is_plain_hashref($locks) and %{$locks};
     debug_ 'Removing ZObj semlocks';
-    for my $lock (grep { ref($_) eq 'POSIX::RT::Semaphore::Named' } values $locks) {
+    for my $lock (grep { ref($_) eq 'POSIX::RT::Semaphore::Named' } values %{$locks}) {
         $lock->post unless $lock->getvalue > 0;
         $lock->close;
     }
@@ -914,7 +916,7 @@ sub __no_deps_json {
     my $h=shift;
     my $fn=__fq_func_name();
     logdie { 'You must pass hashref or arrayref to %s, but this is %s', $fn, Dumper([$h]) } unless ref $h and ref($h) =~ /^(?:ARRAY|HASH)$/;
-    return JSON::XS->new->encode({ map {my $v=$_->[1]; $_->[0]=>(ref($_->[1]) eq 'HASH')?{map {$_=>$v->{$_}} grep {$_ ne 'dependencies'} keys $v}:$v } map [each $h], 1..keys $h});
+    return JSON::XS->new->encode({ map {my $v=$_->[1]; $_->[0] => is_plain_hashref($_->[1]) ? {map {$_=>$v->{$_}} grep {$_ ne 'dependencies'} keys %{$v}} : $v } map [each %{$h}], 1..keys %{$h}});
 }
 
 sub __fq_func_name {
@@ -990,7 +992,7 @@ sub __get_dbh {
             $_->($dbh, \%execAfterOpts) for @{$exec_after};
         }
         when ( 'HASH' ) {
-            $_->[1]->( $_->[0] => $dbh, \%execAfterOpts ) for map [each $exec_after], 1 .. keys $exec_after;
+            $_->[1]->( $_->[0] => $dbh, \%execAfterOpts ) for map [each $exec_after], 1 .. keys %{$exec_after};
         }
         when ( 'CODE' ) {
             $exec_after->($dbh, \%execAfterOpts)
