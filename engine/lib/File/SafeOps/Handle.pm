@@ -1,7 +1,9 @@
 package File::SafeOps::Handle;
 use feature 'say';
+use Clean::On::Exit;
 use Carp qw(confess croak);
 use Fcntl qw(:flock SEEK_SET SEEK_END);
+use Clean::On::Exit;
 
 my %modeNameCnv=(
   'read'	=>	{ 'open'=>'<' ,	'lock'=>LOCK_SH	},
@@ -16,12 +18,12 @@ my %lockName2Num=(
 );
 
 sub new {
-  my ($class, $fileName, $modeOpen, %opts)=@_;
+  my ($class, $fileName, $modeOpen, %opts) = @_;
   
-  confess 'Unknown open() mode: '.$modeOpen 
-    unless my $how2open=$modeNameCnv{$modeOpen=lc $modeOpen}{'open'};
-  
-  $opts{'lock_mode'}||=$opts{'lock'};
+  my $how2open=$modeNameCnv{$modeOpen=lc $modeOpen}{'open'} 
+    or confess 'Unknown open() mode: ' . $modeOpen;
+    
+  $opts{'lock_mode'} ||= $opts{'lock'};
   die 'Cant determine file lock mode'
     unless my $lockMode=
       $opts{'lock_mode'}
@@ -35,14 +37,17 @@ sub new {
           }
         : $modeNameCnv{$modeOpen}{'lock'};
   
-  open my $fh, ($modeOpen eq 'write' and ! -e $fileName)?$how2open='>':$how2open, $fileName
+  open my $fh, ($modeOpen eq 'write' and ! -e $fileName) ? $how2open = '>' : $how2open, $fileName
     or die "Cant open $fileName for $modeOpen: $!";
-  flock($fh, $lockMode) or (($lockMode & LOCK_NB) and $! and substr($!,0,8) eq 'Resource')?return:confess("Cant lock $fileName for [$lockMode]: $!");
+  flock($fh, $lockMode)
+    or (($lockMode & LOCK_NB) and $! and substr($!, 0, 8) eq 'Resource')
+        ? return
+        : confess("Cant lock $fileName for [$lockMode]: $!");
     
-  if ( $modeOpen=~/append|write/ ) {
+  if ( $modeOpen =~ /append|write/ ) {
     if ( $opts{'autoflush'} ) {
-      my $hndl=select($fh);
-      $|=1;
+      my $hndl = select($fh);
+      $| = 1;
       select($hndl);
     }
     
@@ -58,9 +63,15 @@ sub new {
     }
   }
   
-  bless 
-    {'path'=>$fileName, 'handle'=>$fh, 'mode'=>$modeOpen, 'how'=>$how2open, 'opts'=>\%opts},
-    (ref $class || $class);
+  my $fsoh = bless +{
+    'path'	=> $fileName,
+    'handle'	=> $fh,
+    'mode'	=> $modeOpen,
+    'how' 	=> $how2open,
+    'opts' 	=> \%opts
+  }, (ref $class || $class);
+  wipe_on_exit($fsoh) if $opts{'autoremove'};
+  $fsoh
 }
 
 sub content {
@@ -98,7 +109,7 @@ sub scan_hash {
     my $pS=\$_[0];
     return $hr->{$$pS} if exists $hr->{$$pS};
     my $lps=length($$pS);
-    for (grep {length != $lps} keys %{$hr}) {
+    for (grep {length != $lps} keys $hr) {
         return $hr->{$_} if 
           length > $lps
             ? substr($_,0,$lps) eq $$pS
@@ -108,8 +119,7 @@ sub scan_hash {
 }
 
 sub DESTROY {
-  my ($slf)=@_;
-#  say 'Destroying file handle';
+  my ($slf) = @_;
   if (exists($slf->{'opts'}{'unlink_on_close'}) and $slf->{'opts'}{'unlink_on_close'}) {
     unlink($slf->{'path'}) or 
       die sprintf('When destroying %s object: Cant unlink %s before unlock and close associated filehandler', __PACKAGE__, $slf->{'path'});

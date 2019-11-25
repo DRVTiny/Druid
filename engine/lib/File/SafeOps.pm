@@ -10,7 +10,7 @@ use Try::Tiny;
 sub new {
   my ($class, $fileName)=@_;
   die {'error'=>'You must pass file name as the first parameter of the constructor method'}
-    unless $fileName and !ref $fileName;  
+    unless $fileName and !ref $fileName;
   bless {'path'=>$fileName}, (ref($class) || $class);
 }
 
@@ -18,7 +18,7 @@ sub safe_open {
   my ($slf, $mode, $lock, %opts)=@_;
   my $fh=
     try {
-      File::SafeOps::Handle->new($slf->{'path'}, $mode, $lock?('lock_mode'=>$lock):(), %opts)
+      File::SafeOps::Handle->new($slf->{'path'}, $mode, $lock ? ('lock_mode'=>$lock) : (), %opts)
     } catch {
       die {'error'=>$_}
     };
@@ -27,7 +27,7 @@ sub safe_open {
 }
 
 sub safe_close {
-  my ($slf)=@_;
+  my ($slf) = @_;
   $_->close_me() for @{$slf->{'fh'}};
 }
 

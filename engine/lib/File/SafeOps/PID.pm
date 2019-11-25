@@ -3,33 +3,29 @@ use 5.16.1;
 use strict;
 use warnings;
 use utf8;
-
-use File::SafeOps::Handle;
+use constant Y => 1;
+use base 'File::SafeOps::Handle';
 use Try::Tiny;
 use Carp qw(confess);
 
-our (@ISA,@EXPORT,@EXPORT_OK);
-BEGIN {
-	require Exporter;
-	@ISA = qw(Exporter);
-	@EXPORT = qw(createPIDFile);
-        @EXPORT_OK = @EXPORT;
-}
-
-sub createPIDFile {
-    my ($pidFile, $pidNum, $err)=(shift, shift, undef);
+sub new {
+    my ($class, $pidFile, $pidNum) = @_;
+    my $err;
     my $fh = try {
-        File::SafeOps::Handle->new(
-            $pidFile => 'write',
+        $class->SUPER::new(
+            $pidFile 	 => 'write',
             'lock_mode'	 => 'exclusive nonblocking',
-            'autoremove' => 1,
-            'autoflush'  => 1,
+            'autoremove' => Y,
+            'autoflush'  => Y,
         )
     } catch {
-        chomp; $err=$_; undef
+        chomp; $err = $_; undef
     } or confess('Cant open PID file for write: ', ($err || 'locked by another process'));
-    $fh->write($pidNum // $$);
-    return $fh
+    (! defined($pidNum) or (length($pidNum) and $pidNum =~ /(?!0)\d\d*/ and -d "/proc/${pidNum}"))
+        or confess 'Wrong PID specified: ' . ($pidNum // 'NULL');
+    $fh->write($pidNum // $$) or confess(sprintf 'Failed to write PID to the specified pid file <<%s>>', $pidFile);
+   
+    $fh
 }
 
 1;

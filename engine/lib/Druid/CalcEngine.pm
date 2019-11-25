@@ -773,7 +773,7 @@ sub doCalcLostFunK {
                                             __list_deps_to_wipe($zo, $svcid, $deps, my $deps2wipe = {});
                                             if ( %{$deps2wipe->{'s'}} ) {
                                                 while (my ($zoltr, $zoids) = each %{$deps2wipe}) {
-                                                    debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys($zoids) )};
+                                                    debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys %{$zoids} )};
                                                     delete @{$zo->{$zoltr}}{keys %{$zoids}}
                                                 }
                                             }
