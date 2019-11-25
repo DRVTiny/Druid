@@ -17,7 +17,7 @@ use lib '/opt/Perl5/libs';
 use Tag::DeCoder;
 use POSIX::RT::Semaphore;
 use Log::Log4perl;
-use Log4perl::KISS;
+use Log::Log4perl::KISS;
 use Try::Tiny;
 use DBI;
 use FindBin;
