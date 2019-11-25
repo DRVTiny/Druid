@@ -14,6 +14,7 @@ use constant {
 use strict;
 use parent 'Redis::Fast';
 use utf8;
+use experimental 'smartmatch';
 binmode $_=>':utf8' for *STDOUT,*STDERR;
 use 5.16.1;
 use Scalar::Util qw(looks_like_number);

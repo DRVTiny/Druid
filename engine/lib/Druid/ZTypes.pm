@@ -158,8 +158,8 @@ EOSQL
     },    
 );
 
-my @zoprops = values $zobjTypes{'by_name'};
-my @zokeys = keys $zobjTypes{'by_name'};
+my @zoprops = values %{$zobjTypes{'by_name'}};
+my @zokeys = keys %{$zobjTypes{'by_name'}};
 my $iter = each_array(@zokeys, @zoprops);
 while (my ($zname, $zdescr) = $iter->()) {
     $zdescr->{'type'} = $zname;
