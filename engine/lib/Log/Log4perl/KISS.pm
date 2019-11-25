@@ -1,4 +1,8 @@
 package Log::Log4perl::KISS;
+use constant LOG_SEVERITIES => qw/trace debug info warn error fatal/;
+use constant DONE => 1;
+use constant NIL  => '<Nil>';
+
 use 5.16.1;
 use strict;
 use warnings;
@@ -6,25 +10,35 @@ use utf8;
 use JSON;
 use Ref::Util qw(is_ref is_plain_scalarref is_plain_arrayref is_plain_coderef is_plain_hashref);
 use Data::Dumper qw(Dumper);
-use constant DONE => 1;
-use constant NIL  => '<Nil>';
-BEGIN { binmode $_, ':utf8' for *STDOUT, *STDERR }
-use Exporter qw(import);
-
-use Log::Log4perl;
-use Log::Log4perl::Level;
 use Scalar::Util qw(refaddr weaken);
 use Carp qw(confess);
+use Exporter qw(import);
+use Log::Log4perl;
+use Log::Log4perl::Level;
 
-my @logSevs = qw/trace debug info warn error fatal/;
-my %logMethodDefs = (
-    'logdie' => [undef, sub { confess($_[1]) }, $FATAL]
-);
-my @logMethods = keys %logMethodDefs;
-my %logSev2N = do {
+use subs qw(log_);
+my (@logSevs, %logMethodDefs, @logMethods, %logSev2N);
+BEGIN { 
+    binmode $_, ':utf8' for *STDOUT, *STDERR;
+    
+    
+    @logSevs = LOG_SEVERITIES;
+    %logMethodDefs = (
+        'logdie' => [undef, sub { confess($_[1]) }, $FATAL]
+    );
+    @logMethods = keys %logMethodDefs;
+    
     no strict 'refs';
-    map {my $U = uc($_); ($_ => $$U, uc($_) => $$U) } @logSevs;
-};
+    %logSev2N = map { my $U = uc($_); ($_ => $$U, uc($_) => $$U) } @logSevs;
+    
+    for (@logSevs, @logMethods) {
+        my $methodFQName = __PACKAGE__ . '::' . $_;
+        *{$methodFQName . '_'} 	= eval sprintf('sub      { log_( q{%s}, @_ ) }', $_);
+        *{$methodFQName} 	= eval sprintf('sub (&@) { log_( q{%s}, @_ ) }', $_);
+    }    
+}
+
+
 
 our @EXPORT = our @EXPORT_OK = (
     qw/log_open log_level/,
@@ -172,15 +186,6 @@ sub stringify_list_elems {
                 ? $_
                 : NIL, 
         @_
-}
-
-{    
-    no strict 'refs';
-    for (@logSevs,@logMethods) {
-        my $methodFQName = __PACKAGE__ . '::' . $_;
-        *{$methodFQName . '_'} 	= eval sprintf('sub      { log_( q{%s}, @_ ) }', $_);
-        *{$methodFQName} 	= eval sprintf('sub (&@) { log_( q{%s}, @_ ) }', $_);
-    }
 }
 
 sub set_logger {

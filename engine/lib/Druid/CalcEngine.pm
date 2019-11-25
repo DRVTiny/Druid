@@ -412,9 +412,9 @@ sub actualizeHosts {
     $st->execute();
     my $hostsActual = $st->fetchall_hashref('hostid');
     return unless %{$hostsActual};
-    my $hostsCached = $redcHostsDb->read({}, keys $hostsActual);
+    my $hostsCached = $redcHostsDb->read({}, keys %{$hostsActual});
     if ( my %updHosts = map {
-        my ($hostid, $cshHost) = each $hostsCached;
+        my ($hostid, $cshHost) = each %{$hostsCached};
         if ( defined $cshHost ) {
             my $actHost = $hostsActual->{$hostid};
 #        if ( defined(my $actHost = $hostsActual->{$hostid}) ) {
@@ -424,7 +424,7 @@ sub actualizeHosts {
         } else {
             ()
         }
-    } 1..keys $hostsCached ) {
+    } 1..keys %{$hostsCached} ) {
     
         $redcHostsDb->write(\%updHosts, sub { 
             logdie_ 'Failed to update hosts status in Redis:', $_[1] if defined($_[1]);
@@ -433,7 +433,7 @@ sub actualizeHosts {
         
         $redcHostsDb->wait_all_responses;
     } else {
-        debug { 'All (act=%d, csh=%d) hosts status is actual', (map scalar(keys $_), $hostsActual, $hostsCached) };        
+        debug { 'All (act=%d, csh=%d) hosts status is actual', (map scalar(keys %{$_}), $hostsActual, $hostsCached) };        
     }
     1;
 }
@@ -465,7 +465,7 @@ sub actualizeMaintFlag {
                     ($flInMaintenance
                         ? ($ansNode->{'algorithm'} == SVC_ALGO_ONE_FOR_PROBLEM 
                                 or 
-                           ! ( @siblings and notall { $_->{'maintenance_flag'} } @{$redcServices->read( @siblings )} )
+                           ! ( @siblings and notall sub { $_->{'maintenance_flag'} }, @{$redcServices->read( @siblings )} )
                           )
                         : ($ansNode->{'algorithm'} == SVC_ALGO_ALL_FOR_PROBLEM
                                 or
