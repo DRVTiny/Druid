@@ -36,7 +36,7 @@ use EV;
 use AnyEvent;
 use Redis::BCStation;
 use File::SafeOps::PID;
-use Log4perl::KISS;
+use Log::Log4perl::KISS;
 use Druid::CalcEngine;
 
 sub ctx_check(&$);
