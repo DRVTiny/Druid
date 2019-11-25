@@ -66,15 +66,15 @@ BEGIN {
         if ( is_plain_hashref($_[0]) ) {
             %{$_[0]} or confess $errEmptyList; # there is nothing to write
             my $data = $_[0];
-            my $method = (keys($data) > 1 ? 'm' : '') . 'set';
+            my $method = (keys( %{$data} ) > 1 ? 'm' : '') . 'set';
             $redC->$method(
                 ( map {
-                    my ($k, $v) = each $data;
+                    my ($k, $v) = each %{$data};
                     <<CHECK_FOR_NULL>>
                     $k => ref($v)
                         ? encodeByTag($encTag => $v)
                         : do { utf8::is_utf8($v) and utf8::encode($v); $v }
-                } 1..keys($data) ),
+                } 1..keys(%{$data}) ),
                 $cb ? ($cb) : ()
             )
         } else {
