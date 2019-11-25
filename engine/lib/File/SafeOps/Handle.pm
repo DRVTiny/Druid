@@ -98,7 +98,7 @@ sub scan_hash {
     my $pS=\$_[0];
     return $hr->{$$pS} if exists $hr->{$$pS};
     my $lps=length($$pS);
-    for (grep {length != $lps} keys $hr) {
+    for (grep {length != $lps} keys %{$hr}) {
         return $hr->{$_} if 
           length > $lps
             ? substr($_,0,$lps) eq $$pS
