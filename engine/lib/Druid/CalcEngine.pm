@@ -326,7 +326,11 @@ sub reloadCache2 {
             my $zobjs = $slf->get_many_zobjs_from_src($zoltr, keys %{$zoids});
                 $zoltr => 
                     $assocWithServiceIdAttr->{$zoltr}
-                        ? +{map { my ($oid, $me)=each $zobjs; $me->{'serviceid'}=$zoids->{$oid}; $oid => $me } 1..keys %{$zobjs}}
+                        ? +{map { 
+                                my ($oid, $me) = each %{$zobjs};
+                                $me->{'serviceid'} = $zoids->{$oid};
+                                ( $oid => $me )
+                          } 1..keys %{$zobjs}}
                         : $zobjs
         } keys %assocs
     );
