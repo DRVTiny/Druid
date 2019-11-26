@@ -2,7 +2,15 @@
 use strict;
 use warnings;
 use 5.16.1;
-use lib '/opt/Perl5/libs';
+BEGIN {
+    push @INC, qw(/usr/local/share/perl5 /usr/local/lib64/perl5),
+        (defined($ENV{'DRUID_MODE'}) && $ENV{'DRUID_MODE'} eq 'development') 
+            ? do { 
+                require 'FindBin.pm';
+                my $LD_PATH = $FindBin::Bin . '/../lib'; -d $LD_PATH ? ($LD_PATH) : ()
+              }
+            : qw(/opt/Perl5/libs /opt/Perl5/libs/x86_64-linux-thread-multi)
+}
 use Try::Tiny;
 use Log::Log4perl::KISS;
 use Getopt::Long::Descriptive;
