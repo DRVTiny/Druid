@@ -44,7 +44,7 @@ module DruidWebApp
 			before_all do |env|
 				headers env, {
 					"Content-Type" => "application/json",
-					"X-Server-Time" => Time.now.epoch.to_s
+					"X-Server-Time" => Time.local.to_unix.to_s
 				}
 			end
 			

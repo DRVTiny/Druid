@@ -77,7 +77,7 @@ class Druid
                 zobjs, deps_and_self = svc_branch_get_tree_desc( serviceid )
                 if @redcCache.get(soid).is_a?(Nil)
                     puts "Caching svc##{serviceid} deps info for #{@svc_deps_ttl} sec. in redis_db=#{@redis_db_n[:c]}, key=#{soid}"
-                    @redcCache.setex( soid, @svc_deps_ttl, ENCODE_PFX + String.new({Time.new.epoch_f, deps_and_self}.to_msgpack) )
+                    @redcCache.setex( soid, @svc_deps_ttl, ENCODE_PFX + String.new({Time.local.to_unix_f, deps_and_self}.to_msgpack) )
                 end
             end
         else
@@ -193,7 +193,7 @@ class Druid
             
             n_fibers : Int32 = if n_objs_per_part < min_objs_per_fiber
                 n_objs_per_part = Math.min(min_objs_per_fiber, n_objs)
-                n_objs / n_objs_per_part
+                n_objs // n_objs_per_part
             else
                 1 << n_fibers_p2
             end
