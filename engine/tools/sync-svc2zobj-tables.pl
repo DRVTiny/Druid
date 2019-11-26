@@ -4,7 +4,7 @@ use warnings;
 use 5.16.1;
 use lib '/opt/Perl5/libs';
 use Try::Tiny;
-use Log4perl::KISS;
+use Log::Log4perl::KISS;
 use Getopt::Long::Descriptive;
 use ZAPI;
 use DBR;
