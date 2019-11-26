@@ -1061,7 +1061,7 @@ sub __list_deps_to_wipe {
         my ($pars, $deps) = @{$svc}{'parents','dependencies'};
         if ( $#{$pars} > 0 ) {
             for my $i (0..$#{$pars}) {
-                splice($pars, $i, 1, ()), last if $pars->[$i] == $parid;
+                splice(@{$pars}, $i, 1, ()), last if $pars->[$i] == $parid;
             }
         } else {
             $svcAlreadySeen->{$svcid} = 1;
