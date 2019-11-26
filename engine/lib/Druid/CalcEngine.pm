@@ -4,12 +4,13 @@ use 5.16.1;
 use strict;
 use warnings;
 use utf8;
-use experimental 'smartmatch';
+use experimental qw(smartmatch);
 BEGIN { binmode $_, ':utf8' for *STDOUT,*STDERR; }
+
 use Fcntl;
 use Scalar::Util 	qw(blessed refaddr);
-use Ref::Util 		qw(is_plain_hashref is_plain_arrayref);
-use List::Util 		qw(max min sum all any notall);
+use Ref::Util 		qw(is_plain_hashref is_plain_arrayref is_hashref is_arrayref);
+use List::Util 		qw(max min sum all any notall uniq);
 use POSIX 		qw(strftime);
 use Data::Dumper 	qw(Dumper);
 use Carp 		qw(croak confess);
@@ -20,13 +21,17 @@ use POSIX::RT::Semaphore;
 use Log::Log4perl;
 use Log::Log4perl::KISS;
 use Try::Tiny;
-use DBI;
-use FindBin;
-use lib "$FindBin::Bin/../lib";
 use RedC;
+use DBI;
+use ZAPI;
+use DBR;
+
+use FindBin;
+BEGIN {
+    $ENV{'DRUID_MODE'} and $ENV{'DRUID_MODE'} eq 'development' and unshift @INC, "$FindBin::Bin/../lib";
+}
 use Druid::ZTypes qw(%_sql %zobjTypes);
 
-my $MAX_LINES_PER_INSERT=25;
 use constant {
     ROOT_SERVICE_ID		=>  0,
     
@@ -72,6 +77,7 @@ use constant {
     DFLT_SERIALIZER		=> 'CB', # Serialize to CBOR by default
     
     CACHE3_REDIS_DB_N		=>  4,
+    SQL_DBMS_NAME		=>  17,
 };
 
 use constant RN_VAL_TRIG_PRIO => 1 / (TRIG_PRIO_DISASTER - TRIG_PRIO_INFO);
@@ -89,15 +95,14 @@ my $rxZOExt = qr/^(?:.+\s+)?\(([${ltrs}])(\d+)\)$/;
 my $rxZOExt4s = qr/\s*\(([${ltrs}])(\d+)\)$/;
 my $json = JSON::XS->new;
 
+
 sub new {
-    my ($class, $dbs, %pars) = @_;
-    if (! ref $dbs and $dbs) {
-        confess 'Cant source file containing db configuration data: '.$@ unless eval { my $f=$dbs; $dbs={}; %{$dbs}=do($f) };
-    } elsif ( !($dbs && is_plain_hashref( $dbs )) ) {
-        confess 'You must pass reference to DB configuation data or file name with this data to source';
-    }
-    
-    my $dbhR = __get_dbh($dbs, 'source', 'group_concat_max_len' => GROUP_CONCAT_MAX_LEN);
+    my ($class, %pars) = @_;
+    my $zapi = ZAPI->new(undef, 'DBIx::SQLEngine');
+    # $dbhR will be Instance of DBIx::SQLEngine::* (driver for target database) by default
+    my $dbhR = $zapi->dbh;
+    ref($dbhR) =~ /^DBI(x::SQLEngine|::db)/ or die sprintf 'Cant work with dbh provided by ZAPI instanciated not from DBIx::SQLEngine or DBI::db classes, but received inastance of <<%s>> class instead. Please check DB_PERL_PKG option in your ZAPI configuration', ref($dbhR);
+#    print Dumper \%zobjTypes; exit;
     my $logger = sub {
         my $L = shift;
         ($L and ref($L) and blessed($L) and !(grep !$L->can($_), qw/debug info warn error fatal/))
@@ -116,13 +121,15 @@ EOLOGCONF
     }->($pars{'logger'});
     my $encoder = uc($pars{'encoder'} // DFLT_SERIALIZER);
     my %props; %props = (
-        'dbhSource'	=>	{ 'value' => $dbhR },
+        'dbhSource'	=>	{ 'value' => $dbhR, 'protected' => TRUE },
+        'zapi'		=> 	{ 'value' => $zapi, 'read_only' => TRUE, 'protected' => TRUE },
         'redC'		=>	{
         # Name must be unique to be possible to exactly identify this client amongst others in the Redis client list
             'value' 	=> RedC->new( 'name' => join('::' => __PACKAGE__, refaddr(\%props)), 'encoder' => $encoder ),
             'read_only' => TRUE,
         },
-        'cache3redisDbN'	=>	{ 'value' => CACHE3_REDIS_DB_N, 'protected' => TRUE },
+        'cache3redisDbN'	=>	{ 'value' => CACHE3_REDIS_DB_N, 		'protected' => TRUE },
+        'zbxMajorVersion'	=>	{ 'value' => substr($zapi->zversion, 0, 1), 	'protected' => TRUE },
         'servicesOfInterest'	=>	{ 'value' => {}, },
         'underRootServices'  	=>      { 'value' => {}, 'read_only' => TRUE, },
         'encoder'		=>	{ 'value' => $encoder, 'read_only' => TRUE, },
@@ -138,35 +145,6 @@ EOLOGCONF
             }
         },
     );
-    
-#    print Dumper \%props; exit;
-    
-    $props{'st'}{'value'} = \my %sqlSt;
-    # prepare %_sql statements and place it into to %sqlSt==$props{'st'}
-    while (my ($sqlOpName, $sqlOpDscr) = each %_sql) {
-        # replace static parts of the query (constants)
-        $sqlOpDscr->{'rq'} =~ s/%\{([^}]+)\}/eval($1)/ge;
-        
-        # dont create statement handle early if query contains any dynamic parts such as "%s" for sprintf() or ${CODE} for eval "CODE"
-        next if (my $query = $sqlOpDscr->{'rq'})=~m/(?:(?:^|(?<!%))%s|\$\{)/;
-        $sqlSt{ $sqlOpName } = $dbhR->prepare($query);
-    }
-    
-    my $stGetUnderRootSvcs = $sqlSt{'svcGetIDsOfRootDeps'};
-    $stGetUnderRootSvcs->execute();
-    $props{'underRootServices'}{'value'} = +{ 
-        map { $_->[0] => 1 } @{$stGetUnderRootSvcs->fetchall_arrayref([])}
-    };
-    
-    $props{'servicesOfInterest'}{'value'} =
-    (
-        $pars{'root_services'} &&
-        is_plain_arrayref($pars{'root_services'}) && 
-        ! ( grep { ! length($_) or /[^\d]/ } @{$pars{'root_services'}} and croak 'root_services list must contain only numeric service ids' )
-    ) 
-        ? +{map { $_ => 1 } @{$pars{'root_services'}}}
-        : $props{'underRootServices'}{'value'};
-        
     my $slf; $slf = bless sub {
         @_ or croak 'Arguments expected';
         my ($arg0, $r_arg0) = ($_[0], ref($_[0]));
@@ -191,16 +169,50 @@ EOLOGCONF
                 croak "Unknown property $_" unless exists $props{$_};
                 croak "Property $_ is protected" if $props{$_}{'protected'} and (caller)[0] ne __PACKAGE__;
                 $props{$_}{'value'}
-            } $r_arg0 eq 'ARRAY'?@{$arg0}:@_;
-            return wantarray?@out:(@out>1?\@out:$out[0]);
+            } $r_arg0 eq 'ARRAY'? @{$arg0} : @_;
+            return wantarray ? @out : (@out > 1 ? \@out : $out[0]);
         } else {
             logdie_('Reference of type '.${r_arg0}.' can not be accepted as a first parameter. Possible arguments: {key0=>value0,key1=>value1,...} or key0,key1,..,keyN or [key0,key1,..,keyN]');
         }
-    }, $class;
+    }, $class;    
+#    print Dumper \%props; exit;
+    
+    $props{'st'}{'value'} = \my %sqlSt;
+    # prepare %_sql statements and place it into to %sqlSt==$props{'st'}
+    while (my ($sqlOpName, $sqlOpDscr) = each %_sql) {
+        # replace static parts of the query (constants)
+        $sqlOpDscr->{'rq'} =~ s/%\{([^}]+)\}/eval($1)/ge;
+        
+        # dont create statement handle early if query contains any dynamic parts such as "%s" for sprintf() or ${CODE} for eval "CODE"
+        next if (my $query = $sqlOpDscr->{'rq'}) =~ m/(?:(?:^|(?<!%))%s|\$\{)/;
+        {
+            no strict 'refs';
+            $query =~ s%\{\{([^}(]+)\((.*?)\)\}\}%$1->($slf,split(/,\s*/,$2))%gex;
+        }
+        $sqlSt{ $sqlOpName } = $dbhR->prepare($query);
+    }
+    
+    my $stGetUnderRootSvcs = $sqlSt{'svcGetIDsOfRootDeps'};
+    $stGetUnderRootSvcs->execute();
+    $props{'underRootServices'}{'value'} = +{ 
+        map { $_->[0] => 1 } @{$stGetUnderRootSvcs->fetchall_arrayref([])}
+    };
+    
+    $props{'servicesOfInterest'}{'value'} =
+    (
+        $pars{'root_services'} &&
+        is_plain_arrayref($pars{'root_services'}) && 
+        ! ( grep { ! length($_) or /[^\d]/ } @{$pars{'root_services'}} and croak 'root_services list must contain only numeric service ids' )
+    ) 
+        ? +{map { $_ => 1 } @{$pars{'root_services'}}}
+        : $props{'underRootServices'}{'value'};
+        
+
     $slf->({'logger' => $logger});
-    debug_  '*************** %s is ready to use ******************', __PACKAGE__;
+    debug { "*************** %s is ready to use ****************\nZabbix info:\n\tdatabase type: %s\n\tmajor version: %d" } __PACKAGE__, uc($zapi->dbtype), $slf->('zbxMajorVersion');
     for my $zotypeConf ( values %{$zobjTypes{'by_name'}} ) {
         my $zoltr = $zotypeConf->{'letter'};
+        $zotypeConf->{'table'} = ${$zapi->fixed_table_name($zotypeConf->{'table'})};
         $props{'st'}{'value'}{'getzobj'}{$zoltr} = $dbhR->prepare(
             sprintf('select %s from %s where %s=?', join(',' => @{$zotypeConf->{'xattrs'}}), @{$zotypeConf}{'table','id'})
         );
@@ -265,7 +277,7 @@ sub reloadCache2 {
     
     my $dbhR = $slf->('dbhSource')
         or logdie_ 'Cant read from source db: it is not initialized yet';
-    $dbhR->ping or $dbhR->clone;
+#    $dbhR->ping or $dbhR->clone;
     
     my $svc_par2deps = $slf->__get_all_svc_deps();
     
@@ -308,13 +320,13 @@ sub reloadCache2 {
     __purge_svcs(\%svcs, @delSvcTrgs) if @delSvcTrgs;
     my @rootDeps = grep defined $_, map $svcs{$_}, keys %{$slf->('underRootServices')};
     $svcs{0} = {%SVC_ROOT_NODE, 'dependencies'=>{map { $_->{'under_root'}=1; $_->{'serviceid'}=>1 } @rootDeps}};
-    my %zo = (
+    my %zo=(
         map {
             my ($zoltr, $zoids)=($_, $assocs{$_});
             my $zobjs = $slf->get_many_zobjs_from_src($zoltr, keys %{$zoids});
                 $zoltr => 
                     $assocWithServiceIdAttr->{$zoltr}
-                        ? +{map { my ($oid, $me) = each %{$zobjs}; $me->{'serviceid'} = $zoids->{$oid}; $oid => $me } 1..keys %{$zobjs}}
+                        ? +{map { my ($oid, $me)=each $zobjs; $me->{'serviceid'}=$zoids->{$oid}; $oid => $me } 1..keys %{$zobjs}}
                         : $zobjs
         } keys %assocs
     );
@@ -338,12 +350,9 @@ sub reloadCache2 {
     
     for ( values %svcs ) {
        $_->{'lostfunk'} = LFK_NOT_CALC;
-#       $_->{'dependencies'} = [keys %{$_->{'dependencies'}}] if exists $_->{'dependencies'};
+       $_->{'dependencies'} = [keys %{$_->{'dependencies'}}] if exists $_->{'dependencies'};
        if ( $_->{'triggerid'} ) {
-           delete $_->{'dependencies'} if exists $_->{'dependencies'};
-           push @{$zo{'t'}{$_->{'triggerid'}}{'svcpath'}}, __trace_svc_path(\%svcs, $_->{'serviceid'});
-       } else {
-           $_->{'dependencies'} = [ exists($_->{'dependencies'}) ? keys %{$_->{'dependencies'}} : () ];
+          push @{$zo{'t'}{$_->{'triggerid'}}{'svcpath'}}, __trace_svc_path(\%svcs, $_->{'serviceid'})
        }
        $zo{'s'}{$_->{'serviceid'}} = $_;
     }
@@ -373,20 +382,20 @@ sub writeZObjs2SepDbs {
             my $zot = $zoTypes->{'by_letter'}{$zoltr};
             ( is_plain_hashref($zot) and $ztype = $zot->{'type'} )
                 or return [undef, {'error' => sprintf 'ZObj type <<%s>> is not supported by %s', $zoltr, __PACKAGE__}];
-            debug_ 'Processing zobjs type: <<%s>>', $ztype;
+            debug { 'Processing zobjs type: <<%s>>', $ztype };
             defined( $redisDbIndex = $zot->{'redis_db'} ) 
                 or return [undef, {'error' => sprintf 'Cant write ZObjs of type <<%s>> to Redis: database not specified in zobjTypes', $ztype}];
-            debug_ "select( $redisDbIndex )";
+            debug { "select( $redisDbIndex )"};
             $redC->select( $redisDbIndex );
             $redC->multi;
-            debug_ "flushdb( $redisDbIndex )";
+            debug { "flushdb( $redisDbIndex )"};
             $redC->flushdb;
             $redC->write_not_null( $zobjs => sub {
                 if ( $_[1] ) {
                     $redC->discard;
                     confess "Redis reports problem while writing ${ztype}-objects to cache: $_[1]"
                 }
-                debug_ '%i objects of type "%s" was written to Redis Db #%d', scalar(keys %{$zobjs}), $ztype, $redisDbIndex;
+                debug { '%i objects of type "%s" was written to Redis Db #%d', scalar(keys %{$zobjs}), $ztype, $redisDbIndex };
             });
             debug { "before wait_all_responses" };
             $redC->wait_all_responses;
@@ -466,7 +475,7 @@ sub actualizeMaintFlag {
                     ($flInMaintenance
                         ? ($ansNode->{'algorithm'} == SVC_ALGO_ONE_FOR_PROBLEM 
                                 or 
-                           ! ( @siblings and notall sub { $_->{'maintenance_flag'} }, @{$redcServices->read( @siblings )} )
+                           ! ( @siblings and notall { $_->{'maintenance_flag'} } @{$redcServices->read( @siblings )} )
                           )
                         : ($ansNode->{'algorithm'} == SVC_ALGO_ALL_FOR_PROBLEM
                                 or
@@ -499,11 +508,11 @@ sub actualizeTrigValues {
     my $semPath = '/'.$funcName.'_'.($ENV{'LOGNAME'} || $ENV{'USER'} || getpwuid($<));
     ref(my $lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1)) =~ m/^POSIX::RT/
         or logdie_("Cant create <<${semPath}>> lock to update triggers safely: " . $!);
-    unless ( $lock->trywait() and $slf->('semlocks')->{$semPath}=$lock) {
+    unless ( $lock->trywait() and $slf->('semlocks')->{$semPath} = $lock) {
         debug { "SEMVAL($semPath)=".$lock->getvalue() };
         if ($flags & BM_DEL_SEM_IF_EXIST) {
             POSIX::RT::Semaphore->unlink($semPath);
-            $lock=POSIX::RT::Semaphore->open($semPath,O_CREAT,0600,1);
+            $lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1);
             logdie_ 'Cant create lock after unlinking' unless $lock->trywait();
         } else {
             logdie_('Another instance of trigger actualization function already running');
@@ -517,9 +526,9 @@ sub actualizeTrigValues {
         $stGetActualTrigs->rows or logdie_( 'No triggers associated with IT-services found in source db' );
         my $curTrigs = $stGetActualTrigs->fetchall_hashref( 'triggerid' );
         debug { '[%f sec.] %d current trigger values retrieved', __hp_timer(), scalar(keys %{$curTrigs}) };
-        debug { __hp_timer(); 'Retrieving trigger values stored in Redis (i.e. old, previous values)' };
-        
         my $redcTrigsDb = $slf->get_redc_for('triggers');
+        debug { __hp_timer(); 'Retrieving trigger values stored in Redis DB#%d (i.e. old, previous values)' } $redcTrigsDb->index;
+        
         my $prvTrigs = do {
             my @triggerids = $redcTrigsDb->keys('*');
             my $c = 0; 
@@ -543,7 +552,7 @@ sub actualizeTrigValues {
                 } else {
                     ()
                 }
-            } 1 .. keys %{$prvTrigs}
+            } 1..keys %{$prvTrigs}
         ) {
             debug { 'diffTrigs:', __json( \@diffTrigs ) };
             $redcTrigsDb->write( map @{$_}[0,1], @diffTrigs );
@@ -584,11 +593,9 @@ sub doCalcSvcTreeChanges {
     my $affectedSvcs = +{ map {
         my ($triggerid, $trg, $curLFK) = @{$_};
         my $svcPath = $trg->{'svcpath'};
-        (
-            map {
-                $_ => [ $curLFK, $curLFK >= LFK_OK ? $trg->{'lastchange'} : $now_ts ],
-            } keys %{+{ map { pop(@{$_}) => 1 } @{$svcPath} }}
-        ),
+        (map {
+            $_ => [ $curLFK, $curLFK >= LFK_OK ? $trg->{'lastchange'} : $now_ts ],
+        } uniq map pop(@{$_}), @{$svcPath}), # keys +{ map { pop($_)=>1 } @{$svcPath} }),
         map {
             $_ => undef
         } map @{$_}, @{$svcPath}
@@ -621,7 +628,7 @@ sub doCalcSvcTreeChanges {
 
         # Read (to %knownLFK) lostfunks of all dependent services for the "affected" ones
         if ( my @notAffectedDeps = 
-              grep ! exists($affectedSvcs->{$_}), keys %{+{ map {$_ => 1} map @{($_->{'dependencies'} || [])}, values %{$affectedSvcs} }}
+              grep ! exists($affectedSvcs->{$_}), uniq map @{($_->{'dependencies'} || [])}, values %{$affectedSvcs}
         ) {
             debug { 'notAffectedDeps=[', join(', ' => @notAffectedDeps),']' };
             $slf->get_redc_for('services')->read_not_null(@notAffectedDeps, sub {
@@ -637,7 +644,12 @@ sub doCalcSvcTreeChanges {
         for grep exists($affectedSvcs->{$_}), keys %{$slf->('servicesOfInterest')};
 
     debug { 'affectedSvcs after doRecalcLostFunk():', __no_deps_json( $affectedSvcs ) };
-    delete @{$affectedSvcs}{map { my ($svcid, $v) = each %{$affectedSvcs}; defined($v) ? () : $svcid } 1..keys %{$affectedSvcs}};
+    delete @{$affectedSvcs}{
+        map { 
+            my ($svcid, $v) = each %{$affectedSvcs};
+            defined($v) ? () : $svcid
+        } 1 .. keys %{$affectedSvcs}
+    };
     return $affectedSvcs;
 } # <- doCalcSvcTreeChanges()
 
@@ -656,7 +668,7 @@ sub doRecalcLostFunk {
     my ($prvLFK, $svcDeps) = @{$svc}{qw(lostfunk dependencies)};
     # We dont need to know previous lostfunk for services associated with triggers, so... 
     # you cant pass any triggers in $affectedSvcs or you have to define know previous state of the trigger (which is not very informative)
-    defined($prvLFK) or logdie sub { 'WTF, why "lostfunk" is not defined in your service <<%s>> ?', __json($svc) };
+    defined($prvLFK) or logdie { 'WTF, why "lostfunk" is not defined in your service <<%s>> ?', __json($svc) };
     if ( $prvLFK == ($svc->{'lostfunk'} = LFK_LOOP_PROTECT) ) {
         logdie { 'We detected a loop while desc to <<%s>> service subtree. Any further lostfunk calculations is impossible!', $svcid };
         return
@@ -773,7 +785,7 @@ sub doCalcLostFunK {
                                             __list_deps_to_wipe($zo, $svcid, $deps, my $deps2wipe = {});
                                             if ( %{$deps2wipe->{'s'}} ) {
                                                 while (my ($zoltr, $zoids) = each %{$deps2wipe}) {
-                                                    debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys %{$zoids} )};
+                                                    debug { 'Removing objects lying under service#%d associated with disabled host #%d: [%s]', $svcid, $zoid, join( ',' => map $zoltr.$_, keys(%{$zoids}) )};
                                                     delete @{$zo->{$zoltr}}{keys %{$zoids}}
                                                 }
                                             }
@@ -795,7 +807,7 @@ sub doCalcLostFunK {
             }
         }
         
-        # Recursive descend to calculate dependencies (also applicable to hosts in maintenance: all of its dependencies will be calculated)
+        # Recursive descend to calculate depndencies (also applicable to hosts in maintenance: all of its dependencies will be calculated)
         is_plain_arrayref( $svc->{'dependencies'} )
             and 
             my @deps = map { 
@@ -917,7 +929,19 @@ sub __no_deps_json {
     my $h=shift;
     my $fn=__fq_func_name();
     logdie { 'You must pass hashref or arrayref to %s, but this is %s', $fn, Dumper([$h]) } unless ref $h and ref($h) =~ /^(?:ARRAY|HASH)$/;
-    return JSON::XS->new->encode({ map {my $v=$_->[1]; $_->[0] => is_plain_hashref($_->[1]) ? {map {$_=>$v->{$_}} grep {$_ ne 'dependencies'} keys %{$v}} : $v } map [each %{$h}], 1..keys %{$h}});
+    JSON::XS->new->encode({
+        map {
+            my ($k, $v) = each %{$h};
+            $k => 
+                is_hashref($v)
+                    ? +{
+                        map { $_ => $v->{$_} }
+                            grep { $_ ne 'dependencies' }
+                                keys %{$v}
+                      }
+                    : $v
+        } 1 .. keys %{$h}
+    });
 }
 
 sub __fq_func_name {
@@ -951,34 +975,53 @@ sub __get_sth {
 }
 
 sub __get_dbh {
+    state $dbTypeRel = {
+        'mysql' => {
+            'dsn_templ' => 'dbi:mysql:host=%s;database=%s',
+            'add_options' => +{
+                'mysql_enable_utf8' 	=> TRUE,
+                'mysql_auto_reconnect'  => TRUE,
+            },
+            'after_connect_do' => ['SET NAMES utf8'],
+        },
+        'postgresql' => {
+            'dsn_templ' => 'dbi:Pg:host=%s;dbname=%s',
+#            'add_options' => +{
+#            },
+            'after_connect_do' => [q<SET CLIENT_ENCODING TO 'UTF8'>],
+        },
+    };
     shift if ref($_[0]) eq __PACKAGE__;
     (caller)[0] eq __PACKAGE__
         or confess  'You should not use this function outside package ' . __PACKAGE__;
     my ($dbConn, $dbName, %execAfterOpts) = @_;
-    my $dbSettings = $dbConn->{ $dbName } or confess "No connectors for $dbName defined";
-    for ( my $dbType = $dbSettings->{'type'} ? lc($dbSettings->{'type'}) : 'mysql' ) 
+    # dbc means "Database Settings" :)
+    my $dbc = $dbConn->{ $dbName } or confess "No connectors for $dbName defined"; 
+    for ( my $dbType = $dbc->{'type'} ? lc($dbc->{'type'}) : 'mysql' ) 
     {
-        when ( /mysql/ ) {
-            for ( $dbSettings ) {
-                $_->{'dbh'} = DBI->connect(
-                    sprintf('dbi:mysql:host=%s;database=%s', @{$_}{qw/host database/}), 
-                    @{$_}{'user','password'}, 
-                    +{
-                        'RaiseError'		=> YES, 
-                        exists($_->{'autocommit'})
-                            ? ( 'AutoCommit' => $_->{'autocommit'} )
-                            : (),
-                        'mysql_enable_utf8'	=> TRUE,
-                        'mysql_auto_reconnect'	=> TRUE,
-                    }
-                );
-                $_->{'dbh'}->do( 'SET NAMES utf8' );
+        when ( /sql$/ ) {
+            my $dbr = $dbTypeRel->{$dbType};
+            my $dbh = $dbc->{'dbh'} = DBI->connect(
+                sprintf($dbr->{'dsn_templ'}, @{$dbc}{qw/host database/}),
+                @{$dbc}{'user','password'}, 
+                +{
+                    'RaiseError'		=> YES, 
+                    exists($dbc->{'autocommit'})
+                        ? ( 'AutoCommit' => $dbc->{'autocommit'} )
+                        : (),
+                    exists($dbr->{'add_options'})
+                        ? %{$dbr->{'add_options'}} 
+                        : ()
+                }
+            );
+            if (exists $dbr->{'after_connect_do'}) {
+                $dbh->do($_) for @{$dbr->{'after_connect_do'}};
             }
         }
         when ( /redis/ ) {            
-            $dbSettings->{'dbh'} = RedC->new( 
-                'server'	=> join( ':' => @{$dbSettings}{'host','port'} ),
-                'index'		=> $dbSettings->{'dbnum'},
+            $dbc->{'dbh'} = RedC->new( 
+                'server'	=> join( ':' => @{$dbc}{'host','port'} ),
+                'index'		=> $dbc->{'dbnum'},
                 'name'		=> $dbName,
             );
         }
@@ -986,8 +1029,8 @@ sub __get_dbh {
             confess 'Unknown dbtype: ' . $dbType;
         }
     }
-    my $exec_after = $dbSettings->{'exec_after'} or return $dbSettings->{'dbh'}; 
-    my $dbh = $dbSettings->{'dbh'};
+    my $exec_after = $dbc->{'exec_after'} or return $dbc->{'dbh'}; 
+    my $dbh = $dbc->{'dbh'};
     given ( ref $exec_after ) {
         when ( 'ARRAY' ) {
             $_->($dbh, \%execAfterOpts) for @{$exec_after};
@@ -1014,7 +1057,7 @@ sub __list_deps_to_wipe {
         my ($pars, $deps) = @{$svc}{'parents','dependencies'};
         if ( $#{$pars} > 0 ) {
             for my $i (0..$#{$pars}) {
-                splice(@{$pars}, $i, 1, ()), last if $pars->[$i] == $parid;
+                splice($pars, $i, 1, ()), last if $pars->[$i] == $parid;
             }
         } else {
             $svcAlreadySeen->{$svcid} = 1;
@@ -1045,6 +1088,22 @@ sub __va_array_ref {
 
 sub __flatn {
     map is_plain_arrayref($_) ? @{$_} : $_, @_
+}
+
+sub __dbr_listagg {
+    my ($slf, $field) = @_;
+    given ( $slf->('dbhSource')->get_info(SQL_DBMS_NAME) ) {
+        sprintf(q<STRING_AGG(CAST(%s AS text), ',')>, $field) when /^Postgre/;
+        sprintf(q<GROUP_CONCAT(%s SEPARATOR ',')>, $field) when /^My/;
+    }
+}
+
+sub __dbr_ternary {
+    my ($slf, $cond, @fields) = @_;
+    given ( $slf->('dbhSource')->get_info(SQL_DBMS_NAME) ) {
+        sprintf('IF(%s, %s, %s)', $cond, @fields[0,1]) when /^My/;
+        sprintf(q<CASE WHEN (%s) THEN %s ELSE %s END>, $cond, @fields[0,1]) when /^Postgre/;
+    }
 }
 
 1;
