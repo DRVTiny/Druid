@@ -1,0 +1,9 @@
+name: auto_constructor
+version: 0.2
+
+authors:
+  - Konstantin Makarchev <kostya27@gmail.com>
+
+crystal: 0.20.5
+
+license: MIT
