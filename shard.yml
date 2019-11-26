@@ -1,13 +1,19 @@
-name: SomeRedis
+name: DruidNG
 version: 0.1.0
 
 authors:
   - Andrey Konovalov <konovalovaa@nspk.ru>
 
 targets:
-  SomeRedis:
-    main: src/SomeRedis.cr
+  DruidNG:
+    main: src/druid_mp.cr
 
-crystal: 0.23.1
+crystal: 0.26.1
 
+dependencies:
+  kemal:
+    github: kemalcr/kemal  
+  msgpack:
+    github: crystal-community/msgpack-crystal
+    
 license: MIT
