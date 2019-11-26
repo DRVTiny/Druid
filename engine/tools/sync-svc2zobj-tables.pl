@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use 5.16.1;
+use experimental qw(smartmatch);
 BEGIN {
     push @INC, qw(/usr/local/share/perl5 /usr/local/lib64/perl5),
         (defined($ENV{'DRUID_MODE'}) && $ENV{'DRUID_MODE'} eq 'development') 
@@ -72,7 +73,6 @@ for ($what2do) {
       while ( my ( $assocClass, $assocAttrs ) = each %descrAssoc ) {
         my $assocTbl = $assocAttrs->{'tbl'};
         unless ( $flCleanInit ) {
-          print Dumper [$dbr->named_query('table_exists', 'subst' => {'table_name' => $assocTbl})];
           my ($res) = $dbr->named_query('table_exists', 'subst' => {'table_name' => $assocTbl});
           $res->[0]{'count'}
             and warn_( 'Table %s already exists, skipping it', $assocTbl ), next;
