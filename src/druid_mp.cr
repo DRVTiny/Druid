@@ -21,13 +21,13 @@ module DruidWebApp
 	
 	svc_deps_ttl : Int32? = nil
 	tcp_port : UInt16 = DFLT_BIND_TO_TCP_PORT
-	OptionParser.parse! do |parse|
-		parse.banner = "Usage: #{get_app_name} [arguments]"
-		parse.on("-C DEPS_CACHE_TTL", "--cache-ttl=DEPS_CACHE_TTL", "Service dependencies caching period") do |ttl|
+	OptionParser.parse do |parser|
+		parser.banner = "Usage: #{get_app_name} [arguments]"
+		parser.on("-C DEPS_CACHE_TTL", "--cache-ttl=DEPS_CACHE_TTL", "Service dependencies caching period") do |ttl|
 			svc_deps_ttl = ttl.to_i.abs
 		end
-		parse.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
-		parse.on("-h", "--help", "Show help message") { puts parse; exit(0) }
+		parser.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
+		parser.on("-h", "--help", "Show help message") { puts parse; exit(0) }
 	end
 
 	children_procs = [] of Process
