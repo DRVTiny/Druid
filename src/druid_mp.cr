@@ -27,7 +27,7 @@ module DruidWebApp
 			svc_deps_ttl = ttl.to_i.abs
 		end
 		parser.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
-		parser.on("-h", "--help", "Show help message") { puts parse; exit(0) }
+		parser.on("-h", "--help", "Show help message") { puts parser; exit(0) }
 	end
 
 	children_procs = [] of Process
