@@ -3,7 +3,6 @@ use constant DFLT_ZAPI_CONFIG => '/etc/zabbix/api/setenv.conf';
 use utf8;
 use Mojo::Base 'Mojolicious::Controller';
 use JSON::XS qw(encode_json decode_json);
-use IO::Socket::SSL;
 use Data::Dumper;
 use Config::ShellStyle;
 my ($zenv, $conf);
