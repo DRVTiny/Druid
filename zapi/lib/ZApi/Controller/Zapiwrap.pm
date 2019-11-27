@@ -1,76 +1,80 @@
 package ZApi::Controller::Zapiwrap;
+use constant DFLT_ZAPI_CONFIG => '/etc/zabbix/api/setenv.conf';
 use utf8;
 use Mojo::Base 'Mojolicious::Controller';
 use JSON::XS qw(encode_json decode_json);
+use IO::Socket::SSL;
 use Data::Dumper;
-use constant {
-     SETENV_FILE=>'/etc/zabbix/api/setenv_inframon.conf',
-};
-my %SETENV;
-my ($apiUrl,$authToken);
-BEGIN {
- open (my $fhSetEnv,'<',SETENV_FILE) || die 'Cant set environment: '.SETENV_FILE.' not found!';
- %SETENV=map { chomp; $_=~m/^\s*(?<KEY>[A-Za-z0-9_-]+)\s*=\s*(?:(?<Q>["'])(?<VAL>((?!\g{Q}).)*)\g{Q}|(?<VAL>[^'"[:space:]]+?))\s*$/?($+{'KEY'},$+{'VAL'}):('NOTHING','NOWHERE') } grep { $_ !~ m/^\s*(?:#.*)?$/ } <$fhSetEnv>;
- push @INC,split(/\;/,$SETENV{'PERL_LIBS'}) if $SETENV{'PERL_LIBS'};
- close($fhSetEnv);
-}
+use Config::ShellStyle;
+my ($zenv, $conf);
+BEGIN { $zenv = read_config($conf = $ENV{'ZAPI_CONFIG'} // DFLT_ZAPI_CONFIG) }
+my ($apiUrl, $login, $pass, $authToken);
 
 my $flZAPIInit;
 sub init {
-  my $self=shift;
-  my $ua=$self->ua;
-  my $log=$self->app->log;
-  $log->debug('I am pid='.$$.'. Initializing connection to Zabbix API...');
+  my $self = shift;
+  my $ua = $self->ua;
+  my $log = $self->app->log;
   
-  die 'You must specify ZBX_URL in your config '.SETENV_FILE
-    unless $apiUrl=$SETENV{'ZBX_URL'};
-  $authToken=eval { $ua->post(
-    $apiUrl,
-    {'Content-Type'=>'application/json'},
-    'json'=>{'method'=>'user.login', 'jsonrpc'=>'2.0', 'id'=>0, 'params'=>{'user'=>$SETENV{'ZBX_LOGIN'}, 'password'=>$SETENV{'ZBX_PASS'}}}
-  )->result->json->{'result'} } unless $authToken=$SETENV{'ZBX_TOKEN'};
+  $log->debug('I am pid=' . $$ . '. Initializing connection to Zabbix API...');
   
-  unless ($authToken) {
-    $log->error('Cant initialize API, check connecton parameters in your config '.SETENV_FILE);
+  $apiUrl = $zenv->{'ZBX_URL'} // die "You must provide value for option <<ZBX_URL>> in your config $conf";
+  $apiUrl =~ /https:\/\//i and do {
+    require IO::Socket::SSL;
+    IO::Socket::SSL::set_defaults(
+      SSL_verify_mode => IO::Socket::SSL::SSL_VERIFY_NONE,
+    )
+  };
+  $authToken = $zenv->{'ZBX_TOKEN'} // do {
+    ($login, $pass) =
+      map $zenv->{$_} // die("You must provide value for option <<$_>> in your config $conf"), qw/ZBX_LOGIN ZBX_PASS/;
+    eval { $ua->post(
+      $apiUrl,
+      { 'Content-Type' => 'application/json' },
+      'json' => {'method' => 'user.login', 'jsonrpc' => '2.0', 'id' => 0, 'params' => {'user' => $login, 'password' => $pass}}
+    )->result->json->{'result'} } || die "error $@";
+  } // do {
+    $log->error("Cant initialize API, check connecton parameters in your config $conf");
     return
-  }
+  };
   
   $log->debug('Connection to Zabbix API established succesfully');
-  $flZAPIInit=1;
+  $flZAPIInit = 1;
 }
 
 sub get_tigger_descr {
-  my $self=shift;
-  my $log=$self->app->log;
-  $log->debug('Requested triggers: '.(my $triggerids=$self->param('triggerids') || $self->stash('triggerids') || ''));
-  unless ($flZAPIInit) {
-    $log->error('ZApi not initialised yet, so we have to emergency bootstrap now');
+  my $self = shift;
+  my $log = $self->app->log;
+  $log->debug( 'Requested triggers: ' . (my $triggerids = $self->param('triggerids') || $self->stash('triggerids') || '') );
+  unless ( $flZAPIInit ) {
+    $log->error('ZApi not initialised yet, so we have to emergency (re)bootstrap now');
     unless ( init() ) {
       $self->res->code(500);
-      $self->render({'error'=>'Zabbix API init() failed. Cant process your request'});
+      $self->render({'error' => 'Zabbix API init() failed. Cant process your request'});
     }
   }
-  do {
-   $self->render('json'=>{'error'=>'There was no triggerids in request parameters'});
-   return
-  } unless my @triggers=split /,/=>$triggerids;
+  my @triggers = split /,/ => $triggerids
+    or $self->render('json' => {'error' => 'There were no triggerids in request parameters'}), return;
 
   $self->render_later;
   $self->ua->post(
     $apiUrl,
-    {'Content-Type'=>'application/json'},
-    'json'=>{'method'=>'trigger.get', 'jsonrpc'=>'2.0', 'id'=>1, 'auth'=>$authToken, 'params'=>{'triggerids'=>\@triggers,'expandDescription'=>1,'output'=>['description']}},
+    {'Content-Type' => 'application/json'},
+    'json' => {
+      'method' => 'trigger.get', 'jsonrpc' => '2.0', 'id' => 1, 'auth' => $authToken,
+      'params' => {'triggerids' => \@triggers, 'expandDescription' => 1,'output' => ['description']}
+    },
     sub {
-        my ($slfUA, $resp)=@_;
+        my ($slfUA, $resp) = @_;
         $self->res->headers->access_control_allow_origin('*');
-        unless (my $ans=eval { $resp->result->json }) {
+        unless (my $ans = eval { $resp->result->json }) {
           $self->res->code(501);
-          $self->render('json'=>{'error'=>'Cant decode answer to Zabbix API request as JSON'});
-        } elsif ($ans->{'error'}) {
+          $self->render('json' => {'error' => 'Cant decode answer to Zabbix API request as JSON'});
+        } elsif ( $ans->{'error'} ) {
           $self->res->code(404);
-          $self->render('json'=>{'error'=>qq(Zabbix API error $ans->{'error'})});
+          $self->render('json' => {'error' => qq(Zabbix API error $ans->{'error'})});
         } else {
-          $self->render('json'=>{map {$_->{'triggerid'}=>$_->{'description'}} @{$ans->{'result'}}}, 'gzip'=>1);
+          $self->render('json' => +{map {$_->{'triggerid'} => $_->{'description'}} @{$ans->{'result'}}}, 'gzip' => 1);
         }
     });
 }
