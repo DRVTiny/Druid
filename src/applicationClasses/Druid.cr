@@ -149,7 +149,7 @@ class Druid
 	
         zobj_ids[:s] << serviceid
         fill_this["s#{serviceid}"] = svc_o
-        if (deps = svc_o.dependencies) && deps.is_a?(Array(Int32))
+        if (deps = svc_o.dependencies) && deps.is_a?(Array(Int32)) && deps.size > 0
           nxt_lvl_sids.concat(deps)
         end
         if triggerid = svc_o.triggerid
@@ -248,7 +248,11 @@ class Druid
       rescue ex
         raise MPDecodingException.new(ex.message, zobj_s)
       end
-
+			if zobj.is_a?(Cache2::Service)
+				if !( zobj.triggerid || zobj.dependencies )
+					zobj.dependencies = [] of Int32
+				end
+			end
       zobjs_decoded["#{zoltr}#{zobj.id}"] = zobj
     end
     return true
