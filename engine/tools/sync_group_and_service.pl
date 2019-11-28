@@ -77,8 +77,8 @@ my $apiPars = {
 logdie_( 'You must specify ZBX_HOST or ZBX_URL in your config %s', SETENV_FILE )
   unless my $zbxConnectTo = ( $SETENV{'ZBX_HOST'} // $SETENV{'ZBX_URL'} );
 logdie_(
-'Cant initialize API, check connecton parameters (ZBX_HOST or ZBX_URL) in your config %s',
-    SETENV_FILE
+'Cant initialize API, check connecton parameters (ZBX_HOST or ZBX_URL) in your config %s. Error message: <<%s>>',
+    SETENV_FILE, zbx_last_err() // 'NO_MESSAGE'
 ) unless Monitoring::Zabipi->new( $zbxConnectTo, $apiPars );
 logdie_(
 'I cant authorize you on %s. Check your credentials and rerun this script with the "-x" option to know why this happens exactly',
