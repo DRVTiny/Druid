@@ -3,6 +3,7 @@ use 5.16.1;
 use utf8;
 use strict;
 use warnings;
+use experimental qw(smartmatch);
 use JSON::XS;
 use FindBin;
 use lib $FindBin::Bin . '/../lib';
