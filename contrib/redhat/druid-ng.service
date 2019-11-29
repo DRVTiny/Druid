@@ -1,11 +1,10 @@
 [Unit]
-Description=Druid NG
+Description=Druid backend next generation
 After=syslog.target network.target redis.service
 
 [Service]
 Type=simple
-#PIDFile=/var/run/zabbix_alerter/send_to_splunk_hec.pid
-ExecStart=/usr/local/bin/druid-ng --port 3000
+ExecStart=/opt/druid/current/bin/druid-ng
 StandartError=syslog
 StandartOutput=syslog
 SyslogIdentifier=druid-ng

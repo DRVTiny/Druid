@@ -1,0 +1,20 @@
+[Unit]
+Description=Fast wrapper around Zappix API
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/opt/druid/current/zapi/run/hypnotoad.pid
+RemainAfterExit=yes
+Environment=MOJO_MODE=production
+Environment=PERL5LIB=/opt/Perl5/libs
+WorkingDirectory=/opt/druid/current/zapi
+ExecStart=/usr/local/bin/hypnotoad	/opt/druid/current/zapi/script/zapi
+ExecReload=/usr/local/bin/hypnotoad	/opt/druid/current/zapi/script/zapi
+ExecStop=/usr/local/bin/hypnotoad    -s /opt/druid/current/zapi/script/zapi
+KillMode=process
+User=zabbix
+Group=zabbix
+
+[Install]
+WantedBy=multi-user.target

@@ -4,8 +4,9 @@ After=syslog.target network.target redis.service
 
 [Service]
 Type=simple
-Environment="DRUID_MODE=production"
-ExecStart=/usr/local/bin/druid-calc-engine.pl
+Environment="DRUID_MODE=development"
+WorkingDirectory=/opt/druid/current
+ExecStart=/opt/druid/current/engine/svc/druid-calc-engine.pl
 StandartError=syslog
 StandartOutput=syslog
 SyslogIdentifier=druid-calc-engine
