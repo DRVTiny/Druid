@@ -4,5 +4,6 @@ Druid is a hierarchy monitoring dashboard based on standard Zabbix IT Services
 
 ## Contributors
 
-- Andrey Konovalov - creator, backender
+- Andrey Konovalov aka DRVTiny - creator, backender
 - Sergey Grigorov - frontender
+- VitalyWhite - russian documentation
