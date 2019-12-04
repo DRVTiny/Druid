@@ -217,10 +217,10 @@ select distinct ss.serviceid "serviceid", 0 "parentid" from services ss left joi
 EOSQL
     'getSoftParents' => { 'rq' => 'select serviceupid from services_links where soft>0 and servicedownid=?' },
     'getAllParents'  => { 'rq' => <<'EOSQL' },
-select "parentid", "soft" from
-(select serviceupid "parentid", "soft" from services_links where servicedownid={{child_serviceid}}
+select parentid, soft from
+(select serviceupid parentid, soft from services_links where servicedownid={{child_serviceid}}
     union
-select distinct 0 "parentid", 0 "soft" from services ss left join (select servicedownid serviceid from services_links where soft=0) sd on sd.serviceid=ss.serviceid where ss.serviceid={{child_serviceid}} and sd.serviceid is null) tp
+select distinct 0 parentid, 0 soft from services ss left join (select servicedownid serviceid from services_links where soft=0) sd on sd.serviceid=ss.serviceid where ss.serviceid={{child_serviceid}} and sd.serviceid is null) tp
 order by "soft"
 EOSQL
     'getSvcHardDeps' => {
@@ -615,7 +615,7 @@ sub get_svc_parents {
     
 # @pars will be sorted by "soft" attribute
 # \@pars format: [ [parentid0, soft0], [parentid1, soft1], ...]
-    my @pars = @{$self->__query('getAllParents', subst => {child_serviceid => $svcid})}
+    my @pars = @{$self->__query('getAllParents', subst => {child_serviceid => $svcid+0})}
       or die "cant get parents for service #${svcid}";
     $flAsAHash
       ? do {
