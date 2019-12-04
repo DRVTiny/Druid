@@ -241,9 +241,9 @@ qq(select %s from services s left outer join services_links l on l.servicedownid
         'rq' =>
           qq(select priority,value,status from triggers where triggerid=?),
     },
-    'mvSvc' => {
+    'move2OtherParent' => {
         'rq' =>
-          qq(update services_links set serviceupid=? where servicedownid=?),
+          qq<update services_links set serviceupid={{new_parent_serviceid}} where serviceupid={{old_parent_serviceid}} and servicedownid={{child_serviceid}}>,
     },
     'getSvcByName' =>
       { 'rq' => qq(select serviceid from services where name=?), },
@@ -465,6 +465,10 @@ sub __zo_hostgroups_table {
     ${$self->{'zapi'}->fixed_table_name('groups')};
 }
 
+sub __ldbh {
+    $_[0]{'zapi'}->ldbh;
+}
+
 sub __query {
     my ($self, $queryName) = (shift, shift);
     &{$self->{'sql'}{$queryName}{'exec'}};
@@ -600,9 +604,15 @@ sub exists  {
     $self->__query('isSvcExists?', binds => [ $serviceid ]);
 }
 
+# Returns:
+#   [[parentid0, is_soft0], [parentid1, is_soft1]]
+#    OR
+#   {parentid0 => is_soft0, parentid1 => is_soft1}
+# depending on 2nd parameter, $flAsAHash
 sub get_svc_parents {
     my ( $self, $svcid, $flAsAHash ) = @_;
     return if $svcid == DFLT_ROOT_SERVICEID;
+    
 # @pars will be sorted by "soft" attribute
 # \@pars format: [ [parentid0, soft0], [parentid1, soft1], ...]
     my @pars = @{$self->__query('getAllParents', subst => {child_serviceid => $svcid})}
@@ -697,8 +707,9 @@ sub delete {
 
 sub getParents {
     my ($self, $serviceid, $flOnlyHard) = @_;
-    map $_->[0], ( 
-        @{$self->__query('getHardParents', binds => [$serviceid])},
+    die Dumper [$self->__query('getSoftParents', binds => [$serviceid])]; #subst => {child_serviceid => $serviceid})];
+    map $_->{'parentid'}, ( 
+        @{$self->__query('getHardParents', subst => {child_serviceid => $serviceid})},
         $flOnlyHard 
             ? () 
             : @{$self->__query('getSoftParents', binds => [$serviceid])}
@@ -707,12 +718,13 @@ sub getParents {
 
 sub move {
     my ( $self, $what2mv, $where2place ) = @_;
-    my @parentids = $self->getParents($what2mv);
+    my @parentids = map $_->[0], $self->get_svc_parents($what2mv);
     if ($parentids[0] == 0) {
     # insert new services_links row if our child services seated directly under "root"
         my $dbh = $self->__ldbh;
+        my $saveAutoCommit = $dbh->{'AutoCommit'};
+        $dbh->{'AutoCommit'} = 0; 
         $dbh->do('BEGIN');
-        my $curId = $self->__nextid('get' => 'services_links');
         $self->__query('addSvcLink', binds => [
             my $curId = $self->__nextid('get' => 'services_links'),
             $what2mv,
@@ -720,10 +732,17 @@ sub move {
             HARD_LINK
         ]);
         $self->__nextid('incr' => 'services_links');
-        $dbh->do('COMMIT');
+        my $r = $dbh->commit
+          or die 'Commit service changes failed: ' . $dbh->errstr;
+        $dbh->{'AutoCommit'} = $saveAutoCommit;
+        $r
     } else {
     # update existing hard-dependency
-        $self->__query('move2OtherParent', binds => [$what2mv, $where2place])
+        $self->__query('move2OtherParent', subst => {
+            new_parent_serviceid 	=> $where2place,
+            old_parent_serviceid 	=> $parentids[0],
+            child_serviceid		=> $what2mv,
+        })
     }
 }
 
