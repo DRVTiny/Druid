@@ -279,6 +279,9 @@ qq(select s.serviceid from services s left  join services_links sl on s.servicei
         'rq' =>
 qq(delete from services_links where serviceupid=? and servicedownid=? and soft>0),
     },
+    'moveUnderRoot' => {
+        'rq' => 'delete from services_links where servicedownid=? and soft=0'
+    },
     'algochgSvc' =>
       { 'rq' => qq(update services set algorithm=? where serviceid=?) },
     'checkHostEnabled' => {
@@ -718,6 +721,10 @@ sub getParents {
 
 sub move {
     my ( $self, $what2mv, $where2place ) = @_;
+    $what2mv or die 'cant move ROOT service anywhere';
+    unless ( $where2place ) {
+        return $self->__query('moveUnderRoot', binds => [$what2mv]);
+    }
     my @parentids = map $_->[0], $self->get_svc_parents($what2mv);
     if ($parentids[0] == 0) {
     # insert new services_links row if our child services seated directly under "root"
