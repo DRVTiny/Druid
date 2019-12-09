@@ -15,5 +15,9 @@ dependencies:
     github: kemalcr/kemal  
   msgpack:
     github: crystal-community/msgpack-crystal
-    
+  zabipi:
+    github: DRVTiny/monitoring_zabipi
+  dotenv:
+    github: drum445/dotenv    
+   
 license: MIT
