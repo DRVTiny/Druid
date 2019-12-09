@@ -2,6 +2,7 @@ require "json"
 require "kemal"
 require "logger"
 require "option_parser"
+require "zabipi"
 require "./applicationClasses/Druid"
 
 DFLT_APP_NAME = "druid_mp"
@@ -9,7 +10,21 @@ def get_app_name : String
 	appName = Process.executable_path || DFLT_APP_NAME
 	appName[((appName.rindex("/") || -1) + 1)..-1].gsub(/(?:^crystal-run-|\.tmp$)/,"")
 end
+#module Cossack
+class Cossack::HTTPConnection
+	def call(request : Request) : Response
+		client = HTTP::Client.new(request.uri)
+		client.connect_timeout = request.options.connect_timeout
+		client.tls.verify_mode = OpenSSL::SSL::VerifyMode::NONE
+		client.read_timeout = request.options.read_timeout
 
+		http_response = client.exec(request.method, request.uri.to_s, request.headers, request.body)
+		Response.new(http_response.status_code, http_response.headers, http_response.body)
+	rescue err : IO::Timeout
+		raise TimeoutError.new(err.message, cause: err)
+	end
+end
+#end
 module DruidWebApp
 
 	DFLT_SERVICE_ID = 9594
@@ -39,7 +54,7 @@ module DruidWebApp
 					else
 						Druid.new
 					end
-						
+			zapi = Monitoring::Zabipi.new("https://zabbix.nspk.ru/api_jsonrpc.php","zabbix-binddn","Gr4dl0bR1UzH++")
 #			druid = (svc_deps_ttl && svc_deps_ttl > 0) ? Druid.new(svc_deps_ttl) : Druid.new
 			before_all do |env|
 				headers env, {
@@ -59,12 +74,25 @@ module DruidWebApp
 				halt env, status_code: 503, response: s
 			end
 			
-#			after_all do |env|
-#				log.info("Collecting unused memory...")
-#				GC.collect
-#				log.info("GC.collect done")
-#			end
+			blck = ->(env : HTTP::Server::Context) {
+				begin
+					env.response.content_type = "application/json"
+					if tids = env.params.url["triggerids"]? || env.params.query["triggerids"]
+						triggerids = tids.split(/\s*,\s*/).map {|tid| tid.to_u32 rescue raise "triggerid must be positive integer"}
+						zans = zapi.do("trigger.get",{"triggerids" => triggerids, "expandDescription" => 1,"output" => ["description"]})
+						zans.result.as_a.map {|r| {r["triggerid"].as_s.to_u32, r["description"]}}.to_h.to_json(env.response)
+					else
+						raise "no triggerids provided to me"
+					end
+				rescue ex
+					env.response.status_code = 503
+					{"error": "#{ex.message}"}.to_json(env.response)
+				end
+			}
 			
+			get "/triggers/:triggerids", 	&blck
+			get "/triggers", 							&blck
+						
 			sgnl_kemal_stop = Channel(Int32).new
 			spawn do
 				Kemal.config do |cfg| 

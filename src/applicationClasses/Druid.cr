@@ -248,10 +248,8 @@ class Druid
       rescue ex
         raise MPDecodingException.new(ex.message, zobj_s)
       end
-			if zobj.is_a?(Cache2::Service)
-				if !( zobj.triggerid || zobj.dependencies )
-					zobj.dependencies = [] of Int32
-				end
+			if zobj.is_a?(Cache2::Service) && !( zobj.triggerid || zobj.dependencies )
+				zobj.dependencies = [] of Int32
 			end
       zobjs_decoded["#{zoltr}#{zobj.id}"] = zobj
     end
