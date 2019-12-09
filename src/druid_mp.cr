@@ -3,9 +3,12 @@ require "kemal"
 require "logger"
 require "option_parser"
 require "zabipi"
+require "dotenv"
 require "./applicationClasses/Druid"
 
+ZAPI_CONFIG = "/etc/zabbix/api/setenv.conf"
 DFLT_APP_NAME = "druid_mp"
+
 def get_app_name : String
 	appName = Process.executable_path || DFLT_APP_NAME
 	appName[((appName.rindex("/") || -1) + 1)..-1].gsub(/(?:^crystal-run-|\.tmp$)/,"")
@@ -44,7 +47,7 @@ module DruidWebApp
 		parser.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
 		parser.on("-h", "--help", "Show help message") { puts parser; exit(0) }
 	end
-
+  zenv = Dotenv.load(path: ZAPI_CONFIG)
 	children_procs = [] of Process
 	N_PROCS.times do
 		children_procs << ( child_p = Process.fork do
@@ -54,7 +57,7 @@ module DruidWebApp
 					else
 						Druid.new
 					end
-			zapi = Monitoring::Zabipi.new("https://zabbix.nspk.ru/api_jsonrpc.php","zabbix-binddn","Gr4dl0bR1UzH++")
+			zapi = Monitoring::Zabipi.new(zenv["ZBX_URL"], zenv["ZBX_LOGIN"], zenv["ZBX_PASS"])
 #			druid = (svc_deps_ttl && svc_deps_ttl > 0) ? Druid.new(svc_deps_ttl) : Druid.new
 			before_all do |env|
 				headers env, {
