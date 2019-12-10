@@ -70,8 +70,8 @@ module DruidWebApp
 			blck = ->(env : HTTP::Server::Context) {
 				begin
 #					puts "TRIGGER: #{Process.pid}.#{Fiber.current.object_id}"
-					env.response.content_type = "application/json"
-					if tids = env.params.url["triggerids"]? || env.params.query["triggerids"]
+					env.response.content_type = "application/json;charset=UTF-8"
+					if tids = env.params.url["triggerids"]? || env.params.query["triggerids"]? || env.params.body["triggerids"]?.try &.as(String)
 						triggerids = tids.split(/\s*,\s*/).map {|tid| tid.to_u32 rescue raise "triggerid must be positive integer"}
 						zans = zapi.do("trigger.get",{"triggerids" => triggerids, "expandDescription" => 1,"output" => ["description"]})
 						zans.result.as_a.map {|r| {r["triggerid"].as_s.to_u32, r["description"]}}.to_h.to_json(env.response)
@@ -84,8 +84,9 @@ module DruidWebApp
 				end
 			}
 			
-			get "/triggers/:triggerids", 	&blck
-			get "/triggers", 							&blck
+			get  "/triggers/:triggerids", 	&blck
+			get  "/triggers", 							&blck
+			post "/triggers",               &blck
 						
 			sgnl_kemal_stop = Channel(Int32).new
 			spawn do
