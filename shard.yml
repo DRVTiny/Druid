@@ -5,7 +5,7 @@ authors:
   - Andrey Konovalov <konovalovaa@nspk.ru>
 
 targets:
-  DruidNG:
+  druid-ng:
     main: src/druid_mp.cr
 
 crystal: 0.26.1
@@ -15,5 +15,9 @@ dependencies:
     github: kemalcr/kemal  
   msgpack:
     github: crystal-community/msgpack-crystal
-    
+  zabipi:
+    github: DRVTiny/monitoring_zabipi
+  dotenv:
+    github: drum445/dotenv    
+   
 license: MIT

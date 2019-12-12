@@ -2,9 +2,14 @@ require "json"
 require "kemal"
 require "logger"
 require "option_parser"
+require "zabipi"
+require "dotenv"
 require "./applicationClasses/Druid"
+require "./monkeyPatches/cossack"
 
+ZAPI_CONFIG = "/etc/zabbix/api/setenv.conf"
 DFLT_APP_NAME = "druid_mp"
+
 def get_app_name : String
 	appName = Process.executable_path || DFLT_APP_NAME
 	appName[((appName.rindex("/") || -1) + 1)..-1].gsub(/(?:^crystal-run-|\.tmp$)/,"")
@@ -21,15 +26,17 @@ module DruidWebApp
 	
 	svc_deps_ttl : Int32? = nil
 	tcp_port : UInt16 = DFLT_BIND_TO_TCP_PORT
+	setenv_conf = ZAPI_CONFIG
 	OptionParser.parse do |parser|
 		parser.banner = "Usage: #{get_app_name} [arguments]"
 		parser.on("-C DEPS_CACHE_TTL", "--cache-ttl=DEPS_CACHE_TTL", "Service dependencies caching period") do |ttl|
 			svc_deps_ttl = ttl.to_i.abs
 		end
-		parser.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
-		parser.on("-h", "--help", "Show help message") { puts parser; exit(0) }
+		parser.on("-p TCP_PORT_NUMBER", "--port TCP_PORT_NUMBER", 		 "TCP port number to bind to") {|p| tcp_port = p.to_u16? || tcp_port }
+		parser.on("-c ZAPI_CONFIG",			"--setenv-config ZAPI_CONFIG", "Path to setenv config file") {|c| setenv_conf = c }
+		parser.on("-h", 								"--help",											 "Show help message") { puts parser; exit(0) }
 	end
-
+  zenv = Dotenv.load(path: setenv_conf)
 	children_procs = [] of Process
 	N_PROCS.times do
 		children_procs << ( child_p = Process.fork do
@@ -39,7 +46,7 @@ module DruidWebApp
 					else
 						Druid.new
 					end
-						
+			zapi = Monitoring::Zabipi.new(zenv["ZBX_URL"], zenv["ZBX_LOGIN"], zenv["ZBX_PASS"])
 #			druid = (svc_deps_ttl && svc_deps_ttl > 0) ? Druid.new(svc_deps_ttl) : Druid.new
 			before_all do |env|
 				headers env, {
@@ -49,6 +56,7 @@ module DruidWebApp
 			end
 			
 			get "/service/:serviceid" do |env|
+#				puts "SERVICE: #{Process.pid}.#{Fiber.current.object_id}"
 				if (svcid = env.params.url["serviceid"]) && svcid.is_a?(String) && svcid=~/^s?\d+$/
 					druid.svc_branch_get((svcid[0] == 's' ? svcid[1..-1] : svcid).to_i).to_json(env.response)
 				else
@@ -59,12 +67,27 @@ module DruidWebApp
 				halt env, status_code: 503, response: s
 			end
 			
-#			after_all do |env|
-#				log.info("Collecting unused memory...")
-#				GC.collect
-#				log.info("GC.collect done")
-#			end
+			blck = ->(env : HTTP::Server::Context) {
+				begin
+#					puts "TRIGGER: #{Process.pid}.#{Fiber.current.object_id}"
+					env.response.content_type = "application/json;charset=UTF-8"
+					if tids = env.params.url["triggerids"]? || env.params.query["triggerids"]? || env.params.body["triggerids"]?.try &.as(String)
+						triggerids = tids.split(/\s*,\s*/).map {|tid| tid.to_u32 rescue raise "triggerid must be positive integer"}
+						zans = zapi.do("trigger.get",{"triggerids" => triggerids, "expandDescription" => 1,"output" => ["description"]})
+						zans.result.as_a.map {|r| {r["triggerid"].as_s.to_u32, r["description"]}}.to_h.to_json(env.response)
+					else
+						raise "no triggerids provided to me"
+					end
+				rescue ex
+					env.response.status_code = 503
+					{"error": "#{ex.message}"}.to_json(env.response)
+				end
+			}
 			
+			get  "/triggers/:triggerids", 	&blck
+			get  "/triggers", 							&blck
+			post "/triggers",               &blck
+						
 			sgnl_kemal_stop = Channel(Int32).new
 			spawn do
 				Kemal.config do |cfg| 
