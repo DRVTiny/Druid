@@ -18,6 +18,8 @@ dependencies:
   zabipi:
     github: DRVTiny/monitoring_zabipi
   dotenv:
-    github: drum445/dotenv    
+    github: drum445/dotenv
+  app_name:
+    github: DRVTiny/app_name
    
 license: MIT

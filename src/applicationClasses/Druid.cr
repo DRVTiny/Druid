@@ -38,7 +38,6 @@ class Druid
   @redcCache : Redis
 
   def initialize(@redis_db_n = DFLT_ZOTYPE_DBN, @svc_deps_ttl : Int32 = @@SVC_DEPS_TTL)
-    puts "cache_ttl was set to #{@svc_deps_ttl} sec."
     # we can use lazy initialization of Redis connectors (initialize them only when needed, not in cosntructor)... but for what reason we may want to do this?
     @redcZObjs = Array(Redis?).new(N_FIBERS, nil)
     @redcCache = Redis.new
@@ -143,10 +142,10 @@ class Druid
 
         raise "serviceid: #{serviceid} != #{svc_o.serviceid}" unless serviceid == svc_o.serviceid
 
-        if !( svc_o.triggerid || svc_o.dependencies )
+        if !(svc_o.triggerid || svc_o.dependencies)
           svc_o.dependencies = [] of Int32
         end
-	
+
         zobj_ids[:s] << serviceid
         fill_this["s#{serviceid}"] = svc_o
         if (deps = svc_o.dependencies) && deps.is_a?(Array(Int32)) && deps.size > 0
@@ -248,9 +247,9 @@ class Druid
       rescue ex
         raise MPDecodingException.new(ex.message, zobj_s)
       end
-			if zobj.is_a?(Cache2::Service) && !( zobj.triggerid || zobj.dependencies )
-				zobj.dependencies = [] of Int32
-			end
+      if zobj.is_a?(Cache2::Service) && !(zobj.triggerid || zobj.dependencies)
+        zobj.dependencies = [] of Int32
+      end
       zobjs_decoded["#{zoltr}#{zobj.id}"] = zobj
     end
     return true

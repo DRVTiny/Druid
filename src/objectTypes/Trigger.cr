@@ -1,6 +1,6 @@
 module Cache2
-    class Trigger
-    	{% begin %}
+  class Trigger
+    {% begin %}
     	{% trigger_struct = <<-EOSTRUCT
     	{
             triggerid: UInt32,
@@ -11,12 +11,12 @@ module Cache2
             value:     UInt8
         }
 		EOSTRUCT
-		%}
+     %}
         mp_struct({{trigger_struct.id}})
         
         def id
         	@triggerid
         end
         {% end %}
-    end
+  end
 end

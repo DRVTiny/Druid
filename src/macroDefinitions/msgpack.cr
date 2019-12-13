@@ -1,4 +1,4 @@
-macro mp_struct (fields, fl_gen_json=true)
+macro mp_struct(fields, fl_gen_json = true)
 	include MessagePack::Serializable
 	
 	{% for fldName, fldType in fields %}
