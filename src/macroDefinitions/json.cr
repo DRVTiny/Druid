@@ -1,4 +1,4 @@
-macro json_fields (fields)
+macro json_fields(fields)
     {% for fldName, fldType in fields %}
     	{% if fldType.stringify.includes?("::Nil") %}
 	    	@{{fldName}}.try do |v|
