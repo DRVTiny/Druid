@@ -217,10 +217,10 @@ select distinct ss.serviceid "serviceid", 0 "parentid" from services ss left joi
 EOSQL
     'getSoftParents' => { 'rq' => 'select serviceupid from services_links where soft>0 and servicedownid=?' },
     'getAllParents'  => { 'rq' => <<'EOSQL' },
-select "parentid", "soft" from
-(select serviceupid "parentid", "soft" from services_links where servicedownid={{child_serviceid}}
+select parentid, soft from
+(select serviceupid parentid, soft from services_links where servicedownid={{child_serviceid}}
     union
-select distinct 0 "parentid", 0 "soft" from services ss left join (select servicedownid serviceid from services_links where soft=0) sd on sd.serviceid=ss.serviceid where ss.serviceid={{child_serviceid}} and sd.serviceid is null) tp
+select distinct 0 parentid, 0 soft from services ss left join (select servicedownid serviceid from services_links where soft=0) sd on sd.serviceid=ss.serviceid where ss.serviceid={{child_serviceid}} and sd.serviceid is null) tp
 order by "soft"
 EOSQL
     'getSvcHardDeps' => {
@@ -241,9 +241,9 @@ qq(select %s from services s left outer join services_links l on l.servicedownid
         'rq' =>
           qq(select priority,value,status from triggers where triggerid=?),
     },
-    'mvSvc' => {
+    'move2OtherParent' => {
         'rq' =>
-          qq(update services_links set serviceupid=? where servicedownid=?),
+          qq<update services_links set serviceupid={{new_parent_serviceid}} where serviceupid={{old_parent_serviceid}} and servicedownid={{child_serviceid}}>,
     },
     'getSvcByName' =>
       { 'rq' => qq(select serviceid from services where name=?), },
@@ -278,6 +278,9 @@ qq(select s.serviceid from services s left  join services_links sl on s.servicei
     'unlinkSvc' => {
         'rq' =>
 qq(delete from services_links where serviceupid=? and servicedownid=? and soft>0),
+    },
+    'moveUnderRoot' => {
+        'rq' => 'delete from services_links where servicedownid=? and soft=0'
     },
     'algochgSvc' =>
       { 'rq' => qq(update services set algorithm=? where serviceid=?) },
@@ -465,6 +468,10 @@ sub __zo_hostgroups_table {
     ${$self->{'zapi'}->fixed_table_name('groups')};
 }
 
+sub __ldbh {
+    $_[0]{'zapi'}->ldbh;
+}
+
 sub __query {
     my ($self, $queryName) = (shift, shift);
     &{$self->{'sql'}{$queryName}{'exec'}};
@@ -600,12 +607,18 @@ sub exists  {
     $self->__query('isSvcExists?', binds => [ $serviceid ]);
 }
 
+# Returns:
+#   [[parentid0, is_soft0], [parentid1, is_soft1]]
+#    OR
+#   {parentid0 => is_soft0, parentid1 => is_soft1}
+# depending on 2nd parameter, $flAsAHash
 sub get_svc_parents {
     my ( $self, $svcid, $flAsAHash ) = @_;
     return if $svcid == DFLT_ROOT_SERVICEID;
+    
 # @pars will be sorted by "soft" attribute
 # \@pars format: [ [parentid0, soft0], [parentid1, soft1], ...]
-    my @pars = @{$self->__query('getAllParents', subst => {child_serviceid => $svcid})}
+    my @pars = @{$self->__query('getAllParents', subst => {child_serviceid => $svcid+0})}
       or die "cant get parents for service #${svcid}";
     $flAsAHash
       ? do {
@@ -697,8 +710,9 @@ sub delete {
 
 sub getParents {
     my ($self, $serviceid, $flOnlyHard) = @_;
-    map $_->[0], ( 
-        @{$self->__query('getHardParents', binds => [$serviceid])},
+    die Dumper [$self->__query('getSoftParents', binds => [$serviceid])]; #subst => {child_serviceid => $serviceid})];
+    map $_->{'parentid'}, ( 
+        @{$self->__query('getHardParents', subst => {child_serviceid => $serviceid})},
         $flOnlyHard 
             ? () 
             : @{$self->__query('getSoftParents', binds => [$serviceid])}
@@ -707,12 +721,17 @@ sub getParents {
 
 sub move {
     my ( $self, $what2mv, $where2place ) = @_;
-    my @parentids = $self->getParents($what2mv);
+    $what2mv or die 'cant move ROOT service anywhere';
+    unless ( $where2place ) {
+        return $self->__query('moveUnderRoot', binds => [$what2mv]);
+    }
+    my @parentids = map $_->[0], $self->get_svc_parents($what2mv);
     if ($parentids[0] == 0) {
     # insert new services_links row if our child services seated directly under "root"
         my $dbh = $self->__ldbh;
+        my $saveAutoCommit = $dbh->{'AutoCommit'};
+        $dbh->{'AutoCommit'} = 0; 
         $dbh->do('BEGIN');
-        my $curId = $self->__nextid('get' => 'services_links');
         $self->__query('addSvcLink', binds => [
             my $curId = $self->__nextid('get' => 'services_links'),
             $what2mv,
@@ -720,10 +739,17 @@ sub move {
             HARD_LINK
         ]);
         $self->__nextid('incr' => 'services_links');
-        $dbh->do('COMMIT');
+        my $r = $dbh->commit
+          or die 'Commit service changes failed: ' . $dbh->errstr;
+        $dbh->{'AutoCommit'} = $saveAutoCommit;
+        $r
     } else {
     # update existing hard-dependency
-        $self->__query('move2OtherParent', binds => [$what2mv, $where2place])
+        $self->__query('move2OtherParent', subst => {
+            new_parent_serviceid 	=> $where2place,
+            old_parent_serviceid 	=> $parentids[0],
+            child_serviceid		=> $what2mv,
+        })
     }
 }
 

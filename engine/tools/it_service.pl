@@ -45,8 +45,9 @@ zbx('auth', @SETENV{'ZBX_LOGIN', 'ZBX_PASS'})
     ". Check your credentials and run this script with the first key '-x' to know why this happens exactly\n";
 
 my $itsvc = Monitoring::Zabipi::ITServices->new();
+
 #
-#die Dumper [ $itsvc->get_sid_by_name('Zabbix-прокси (КЦОД и РКЦОД)', 31064) ];
+#die Dumper [ scalar $itsvc->get_svc_parents(37343, 1) ];
 # Your code goes here ->
 # For example, you may uncomment this line to get "Zabbix server" on STDOUT:
 my %doSmth;
@@ -127,8 +128,10 @@ my %doSmth;
     },
     'mv' => {
         'func' => sub {
-            die 'Wrong services was passed to me' unless my @svcidsWhatWhere = getServiceIDsByNames(@_);
-            doMoveITService(@svcidsWhatWhere);
+            scalar(@_) == 2 or die 'you must provide me: SERVICEID_TO_BE_MOVED SERVICEID_WHERE_TO_MOVE';
+            $itsvc->move(
+                map looks_like_number($_) ? ( $_ ) : $itsvc->get_sid_by_name( $_ ) , @_
+            );
         },
     },
     'rm' => {

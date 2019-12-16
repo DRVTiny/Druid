@@ -1,6 +1,6 @@
 module Cache2
-    class Service
-    	{% begin %}
+  class Service
+    {% begin %}
     	{% service_struct = <<-EOSTRUCT
 		{
             serviceid: Int32,
@@ -16,7 +16,7 @@ module Cache2
             maintenance_flag: UInt8?
         }
 		EOSTRUCT
-    	%}
+     %}
     	mp_struct({{service_struct.id}})
     	
     	def id
@@ -24,5 +24,5 @@ module Cache2
     	end
 
         {% end %}
-    end
+  end
 end
