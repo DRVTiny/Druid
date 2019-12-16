@@ -35,6 +35,22 @@ Druid можно располагать как на одном хосте с Zab
 	service druid-ng start
 	service druid-calc-engine start
 
+Создаем конфиг для zabbix API
+
+	mkdir /etc/zabbix/api
+	touch /etc/zabbix/api/setenv.conf
+
+Содержимое конфига
+
+	DB_NAME=zabbix
+	DB_HOST=db_host
+	DB_LOGIN=db-login
+	DB_PASSWORD='db-password'
+	ZBX_URL='http://zabbix-fqdn/zabbix/api_jsonrpc.php'
+	ZBX_LOGIN='API_user'
+	ZBX_PASS='password'
+	ZBX_SERVER='x.x.x.x'
+
 Устанавливаем Crystal и шарды
 
 	wget https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
@@ -63,6 +79,11 @@ Druid можно располагать как на одном хосте с Zab
 	a2ensite 00-example.com.conf
 	service apache2 restart
 
+Параметры фронтенда можно указать в config.js
+
+	/var/www/vhosts/example.com/site/js/rsdashboardpanes/config.js
+
+	
 Инструменты и команды
 =====================
 
