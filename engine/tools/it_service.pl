@@ -1,29 +1,37 @@
 #!/usr/bin/perl -CDA
+use 5.16.1;
 use strict;
-use v5.16.1;
+use warnings;
 use utf8;
 use constant {
-    SETENV_FILE              => '/etc/zabbix/api/setenv.conf',
+    ZAPI_CONFIG              => '/etc/zabbix/api/setenv.conf',
     TIMEZONE                 => 'MSK',
     DEFAULT_GOOD_SLA         => '99.05',
-    SLA_ALGO_ALL_FOR_PROBLEM => 2,
+    SLA_ALGO_ALL_FOR_PROBLEM =>  2,
     DFLT_DB_TYPE             => 'mysql',
 };
-use FindBin;
 use Data::Dumper;
+
+use FindBin;
+use lib (
+  $FindBin::RealBin . '/../lib/app', # first priority
+  qw</opt/Perl5/libs /usr/local/share/perl5 /usr/local/lib64/perl5>,
+  $FindBin::RealBin . '/../lib/cmn', # least priority
+);
+
+use Carp qw(croak);
 use Ref::Util qw(is_plain_hashref is_plain_arrayref is_hashref is_arrayref);
 use Scalar::Util::LooksLikeNumber qw(looks_like_number);
 use Config::ShellStyle;
-my %SETENV;
-BEGIN {%SETENV = %{read_config(SETENV_FILE)}}
-use lib $FindBin::Bin . '/../lib';
 use Monitoring::Zabipi qw(zbx zbx_last_err zbx_api_url zbx_get_dbhandle);
 use Monitoring::Zabipi::ITServices;
 
 use Getopt::Std qw(getopts);
 use JSON::XS;
-use Carp qw(croak);
+
 no warnings;
+
+my %SETENV = %{read_config ZAPI_CONFIG};
 
 my $apiPars        = { 'wildcards' => 'true' };
 my $firstarg = shift;
@@ -33,12 +41,12 @@ if ($firstarg eq '-x') {
 } else {
     unshift @ARGV, $firstarg;
 }
-die 'You must specify ZBX_HOST or ZBX_URL in your config ' . SETENV_FILE
+die 'You must specify ZBX_HOST or ZBX_URL in your config ' . ZAPI_CONFIG
     unless my $zbxConnectTo = $SETENV{'ZBX_HOST'} || $SETENV{'ZBX_URL'};
 die 'Cant initialize API, check connecton parameters (ZBX_HOST or ZBX_URL. Connect='
     . $zbxConnectTo
     . ') in your config '
-    . SETENV_FILE
+    . ZAPI_CONFIG
     unless Monitoring::Zabipi->new($zbxConnectTo, $apiPars);
 zbx('auth', @SETENV{'ZBX_LOGIN', 'ZBX_PASS'})
     || die 'I cant authorize you on ', $zbxConnectTo,

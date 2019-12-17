@@ -3,6 +3,7 @@ use 5.16.1;
 use strict;
 use warnings;
 use constant {
+    ZAPI_CONFIG			=> '/etc/zabbix/api/setenv.conf',
     BCST_NAME			=> 'zabbix',
     BCST_CHANNEL		=> 'maint_status_changes',
     FL_REMOVE_SEM_IF_EXISTS 	=> 2,
@@ -10,48 +11,43 @@ use constant {
     IMMEDIATELY			=> 0,
     MIN_PERIOD_BTW_RELOADS	=> 120, # sec.
     BASE_DIR			=> '.',
-    DFLT_CACHE_RELOAD_INTERVAL	=> 3*3600, # sec.
+    DFLT_CACHE_RELOAD_INTERVAL	=> 3 * 3600, # sec.
     DFLT_TRIG_UPDATE_POLICY	=> '10:120', # after:interval (sec.)
     DFLT_HOST_UPDATE_POLICY	=> '20:300', # -//-
-    DFLT_PROD_DBCONN_FILE	=> '/etc/druid/db_conn.pl',
     DFLT_PROD_PID_FILE		=> '/var/run/druid/calc-engine.pid',
 };
+use Data::Dumper qw(Dumper);
 
-BEGIN {
-    push @INC, qw(/usr/local/share/perl5 /usr/local/lib64/perl5),
-        ($ENV{'DRUID_MODE'} && $ENV{'DRUID_MODE'} eq 'development') 
-            ? do { 
-                require 'FindBin.pm';
-                my $LD_PATH = $FindBin::Bin . '/../lib'; -d $LD_PATH ? ($LD_PATH) : ()
-              }
-            : qw(/opt/Perl5/libs /opt/Perl5/libs/x86_64-linux-thread-multi)
-}
+use FindBin;
+use lib (
+  $FindBin::RealBin . '/../lib/app', # first priority
+  qw</opt/Perl5/libs /usr/local/share/perl5 /usr/local/lib64/perl5>,
+  $FindBin::RealBin . '/../lib/cmn', # least priority
+);
 
 use File::Basename qw(dirname);
 use File::Path qw(mkpath);
-use Cwd qw(abs_path);
 use Getopt::Long::Descriptive;
 
 use EV;
 use AnyEvent;
 use Redis::BCStation;
+use Tag::DeCoder;
 use File::SafeOps::PID;
 use Log::Log4perl::KISS;
-use Druid::CalcEngine;
 
 sub ctx_check(&$);
 
 my $slfName = $0 =~ s%(?:^.*/|\.[^.]+$)%%gr;
-my ($dfltDBConnFile, $dfltPIDFile) = 
+my $dfltPIDFile = 
  ($ENV{'DRUID_MODE'} && $ENV{'DRUID_MODE'} eq 'development')
-    ? (
-        $FindBin::Bin . '/../conf/db_conn.pl',
-        $FindBin::Bin . '/../run/calc-engine.pid'
-      )
-    : (DFLT_PROD_DBCONN_FILE, DFLT_PROD_PID_FILE);
+    ? $FindBin::RealBin . '/../run/calc-engine.pid'
+    : DFLT_PROD_PID_FILE;
+my $dfltZapiConfig = $ENV{'ZAPI_CONFIG'} // ZAPI_CONFIG;
 my ($opt, $usage) = describe_options(
         '%c %o',
         [ 'test|t', 				'Do it in the "test" mode. Will be used "safe" environment which do not affect production service operations' ],
+        [ 'setenv-conf|e=s',			'Path to Zabbix API "setenv" file, default: ' . $dfltZapiConfig, {'default' => $dfltZapiConfig}],
         [ 'base-dir|d=s',			'Base directory path', {'default' => DFLT_BASE_DIR} ],
         [ 'pid-file|p=s',			sprintf('PID file path (default: %s)', $dfltPIDFile), {'default' => $dfltPIDFile } ],
         [ 'sock-path|S=s', 			'Path to UNIX socket where we will accept some useful runtime commands' ],
@@ -60,13 +56,15 @@ my ($opt, $usage) = describe_options(
         [ 'update-hosts-interval|H=s',  	'Update hosts maintenance status interval in format: [after:]period, where after and period/interval value specified in seconds', {'default' => DFLT_HOST_UPDATE_POLICY} ],
         [ 'full-reload-interval|F=s',		'Full reload every N seconds (default: '.DFLT_CACHE_RELOAD_INTERVAL.')', {'default'=>DFLT_CACHE_RELOAD_INTERVAL} ],
         [ 'run-after-reload|r=s', 		'Command to run after full reload' ],
-        [ 'db-conn-config|c=s',			'Database connectors configuration file path (default: ' . $dfltDBConnFile . ')', {'default' => $dfltDBConnFile} ],
         [ 'root-services|s=s',			'Comma-delimited root services list' ],
         [ 'redis-bc-station|B=s', 		'Redis broadcasting station name (if not specified, "cache2up" or "cache2up_tst" will be choosen depending on effective operation mode)'],
         [],
         [ 'help',       			'Print this helpful "usage" message and exit' ],
 );
 print('Usage: ' . $usage->text), exit if $opt->help;
+$ENV{ZAPI_CONFIG} = $opt->setenv_conf;
+
+require Druid::CalcEngine or die 'failed to load Druid::CalcEngine package';
 $opt->full_reload_interval =~ /^\d+$/ or die 'Invalid full reload interval: it must be numeric';
 
 my $onFullReloadExec = (grep { defined and -f $_ and -r $_ and -x $_ } $opt->run_after_reload) ? $opt->run_after_reload : undef;
@@ -80,7 +78,6 @@ my $fhPID = File::SafeOps::PID->new(
 log_open($opt->log_file) if defined $opt->log_file;
 
 my $zo = Druid::CalcEngine->new(
-#    $opt->db_conn_config,
     defined($opt->root_services) ? ('root_services' => [split /,/ => $opt->root_services]) : (),
     'encoder' => 'MP'
 );
@@ -111,7 +108,9 @@ my %aeh = map {
 
 Redis::BCStation->new(BCST_NAME)->subscribe(BCST_CHANNEL, sub {
     my $host = decodeByTag($_[0]);
-    $zo->actualizeMaintFlag( @{$host}{qw<hostid maintenance_status>} )
+    debug { 'affectedHost=', Dumper($host) };
+    my $res = $zo->actualizeMaintFlag( @{$host}{qw<hostid maintenance_status>} );
+    debug { 'actualizeMaintFlag(%s,%s) = ' . Dumper([$res]) } @{$host}{qw<hostid maintenance_status>};
 });
 
 $cv->recv;

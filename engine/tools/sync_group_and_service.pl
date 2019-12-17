@@ -1,11 +1,10 @@
 #!/usr/bin/perl
+use 5.16.1;
 my $flDryRun = 0;
 use strict;
 use open ':std', ':encoding(UTF-8)';
 use utf8;
-use 5.16.1;
 use Carp qw(croak);
-binmode *STDOUT, ':utf8';
 use constant {
     TIMEZONE                     => 'MSK',
     SETENV_FILE                  => '/etc/zabbix/api/setenv.conf',
@@ -36,41 +35,32 @@ use constant {
     HOST                         => 1,
     FMT_TRIG_SVC_NAME		 => '(t%d)',
 };
-my %SETENV;
-use lib '../lib';
-use Ref::Util qw(is_arrayref is_hashref);
-use Config::ShellStyle qw(read_config);
-BEGIN { 
-  %SETENV = %{ read_config(SETENV_FILE) };
-  $ARGV[0] eq '-TL' and unshift(@INC, '.'), shift(@ARGV);
-}
+use Data::Dumper;
 
 use FindBin;
-use lib $FindBin::Bin . '/../lib';
+use lib (
+  $FindBin::RealBin . '/../lib/app',
+  qw</opt/Perl5/libs /usr/local/share/perl5 /usr/local/lib64/perl5>,
+  $FindBin::RealBin . '/../lib/cmn'
+);
 
+use Config::ShellStyle qw(read_config);
+use Ref::Util qw(is_arrayref is_hashref);
 use Monitoring::Zabipi qw(zbx zbx_last_err zbx_api_url zbx_get_dbhandle);
 use Monitoring::Zabipi::ITServices 1.1;
 no warnings;
-use Data::Dumper;
 use JSON::XS qw(encode_json);
 use Log::Log4perl::KISS;
 use Getopt::Std qw(getopts);
 
+my %SETENV = %{ read_config(SETENV_FILE) };
+
 getopts 'l:x' => \my %opt;
 log_open( $opt{'l'} ) if $opt{'l'};
 
-#log_level($opt{'x'} ? 'DEBUG' : 'INFO');
+log_level($opt{'x'} ? 'DEBUG' : 'INFO');
 my $apiPars = {
     'wildcards' => 'true',
-    'dbDSN'     => sprintf(
-        'dbi:%s:database=%s;host=%s',
-        { 'postgresql' => 'Pg', 'mysql' => 'mysql' }
-        ->{ $SETENV{'DB_TYPE'} // 'mysql' },
-        @SETENV{qw/DB_NAME DB_HOST/}
-    ),
-    'dbLogin' => ( $SETENV{'DB_LOGIN'} // $SETENV{'DB_USER'} ),
-    'dbPassword' =>
-      ( $SETENV{'DB_PASSWD'} // $SETENV{'DB_PASS'} // $SETENV{'DB_PASSWORD'} ),
     $opt{'x'} ? ( 'debug' => 1, 'pretty' => 1 ) : (),
 };
 
