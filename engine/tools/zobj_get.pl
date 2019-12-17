@@ -6,9 +6,14 @@ use warnings;
 use experimental qw(smartmatch);
 use JSON::XS;
 use FindBin;
-use lib $FindBin::Bin . '/../lib';
+use lib (
+  $FindBin::RealBin . '/../lib/app', # first priority
+  qw</opt/Perl5/libs /usr/local/share/perl5 /usr/local/lib64/perl5>,
+  $FindBin::RealBin . '/../lib/cmn', # least priority
+);
 use RedC;
 use Druid::ZTypes qw(%zobjTypes);
+
 $zobjTypes{'by_letter'}{'c'}{'redis_db'} = 4;
 
 binmode $_, ':utf8' for *STDERR, *STDOUT;
@@ -28,7 +33,11 @@ given ($0) {
         my $zoid = shift;
         die "you must specify valid zoid first" unless $zoid and my ($zoltr, $zloid) = $zoid =~ /^([hgst])(\d+)$/;
         (!@ARGV or scalar(@ARGV) & 1) and die 'you must provide key value pairs to fill zobj attributes';
-        my $redc = RedC->new('encoder' => 'MP', 'name' => $zobjTypes{'by_letter'}{$zoltr}{'type'}, 'index' => $zobjTypes{'by_letter'}{$zoltr}{'redis_db'} // die "redis_db for '$zoltr' not defined");
+        my $redc = RedC->new(
+            'encoder' 	=> 'MP',
+            'name' 	=>  $zobjTypes{'by_letter'}{$zoltr}{'type'} . '_setter',
+            'index'	 => $zobjTypes{'by_letter'}{$zoltr}{'redis_db'} // die "redis_db for '$zoltr' not defined"
+        );
         my $zobj = $redc->read_not_null($zloid)->[0];
         my $json = JSON::XS->new->allow_nonref;
         my %new_vals = @ARGV;
