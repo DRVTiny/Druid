@@ -8,6 +8,7 @@ require "dotenv"
 require "./applicationClasses/Druid"
 require "./applicationClasses/DruidWebApp/LogHelper"
 require "./monkeyPatches/cossack"
+require "./monkeyPatches/redis"
 
 ZAPI_CONFIG   = "/etc/zabbix/api/setenv.conf"
 
