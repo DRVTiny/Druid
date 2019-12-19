@@ -30,8 +30,18 @@ module DruidWebApp
     def initialize(@log_hndl : Logger, @io : IO = STDERR)
     end
     
+    def call(context : HTTP::Server::Context)
+      @log_hndl.info({
+        context.response.status_code,
+        context.request.method,
+        context.request.resource,
+        elapsed_text(Time.measure { call_next(context) })
+      }.join(' '))
+      context
+    end
+    
     def write(message : String)
-      @log_hndl.info(message)
+      @log_hndl.info(message.chomp)
       @io
     end
   end
