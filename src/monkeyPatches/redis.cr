@@ -20,4 +20,27 @@ class Redis
       {keys[ind], red_val}
     end
   end 
+  
+  module CommandExecution
+    # Command execution methods that return real values, not futures.
+
+    module ValueOriented
+    
+      # Executes a Redis command and casts the response to the correct type.
+      # This is an internal method.
+      def string_array_or_any_command(request : Request) : Array(RedisValue) | RedisValue
+        command(request).as(Array(RedisValue) | RedisValue)
+      end
+    end
+  end
+  
+  module Commands
+    def eval(script : String, keys = [] of RedisValue, args = [] of RedisValue)
+      string_array_or_any_command(concat(["EVAL", script, keys.size.to_s], keys, args))
+    end
+
+    def evalsha(sha1, keys = [] of RedisValue, args = [] of RedisValue)
+      string_array_or_any_command(concat(["EVALSHA", sha1.to_s, keys.size.to_s], keys, args))
+    end
+  end  
 end
