@@ -16,25 +16,6 @@ Druid можно располагать как на одном хосте с Zab
 	apt install apache2
 	a2enmod proxy
 
-Устанавливаем cpanminus и модули perl
-
-	apt install cpanminus
-	cpanm AnyEvent EV IO::Socket::SSL JSON Log4perl Log4perl::KISS Log::Dispatch Log::Log4perl Mojolicious Mojo::Log::Clearable Mojo::Redis Mojo::Redis2 POSIX::RT::Semaphore Redis::BCStation Redis::Fast Spread Tag::DeCoder Test Test::Pod Utils ZAPI
-
-Клонируем Druid и вносим необходимые изменения
-
-	git clone https://github.com/DRVTiny/Druid.git
-	# Вместо 1.0.1 указываем актуальную версию
-	cp -R /path_to_clonned_app/druid/* /opt/druid/1.0.1
-	ln -s /opt/druid/1.0.1 /opt/druid/current
-	chown -R zabbix. /opt/druid/1.0.1
-	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
-	systemctl daemon-reload
-	# И запускаем все сервисы:
-	service zapi start
-	service druid-ng start
-	service druid-calc-engine start
-
 Создаем конфиг для zabbix API
 
 	mkdir /etc/zabbix/api
@@ -51,11 +32,51 @@ Druid можно располагать как на одном хосте с Zab
 	ZBX_PASS='password'
 	ZBX_SERVER='x.x.x.x'
 
+Устанавливаем cpanminus и модули perl
+
+	apt install cpanminus
+	cpanm AnyEvent EV IO::Socket::SSL JSON Log4perl Log4perl::KISS Log::Dispatch Log::Log4perl Mojolicious Mojo::Log::Clearable Mojo::Redis Mojo::Redis2 POSIX::RT::Semaphore Redis::BCStation Redis::Fast Spread Tag::DeCoder Test Test::Pod Utils ZAPI
+
+// TO DO	
+Актуальные модули и пакеты при повторной чистой установке:
+apt install cpanminus libdbd-mysql-perl libmojolicious-perl libevent-dev libevent-extra-2.1-6 libevent-openssl-2.1-6 libevent-pthreads-2.1-6 libpcre16-3 libpcre3-dev libpcre32-3 libpcrecpp0v5 pkg-config libcrypto++-dev libcrypto++6 libssl-dev redis
+
+ln -s /usr/bin/hypnotoad /usr/local/bin/hypnotoad
+
+mkdir /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/
+
+cp /opt/druid/current/engine/lib/cmn/Config/ShellStyle.pm /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/
+
+mkdir /opt/druid/current/zapi/log
+
+chown -R zabbix. /opt/druid/current/zapi/log
+
+cpanm Scalar::Util::LooksLikeNumber DBI JSON JSON::XS LWP::UserAgent URI::Encode boolean enum DBIx::Connector Log::Log4perl Mojo::Log::Clearable AnyEvent Mojo::Redis2 Redis::Fast 
+
+cpanm --force POSIX::RT::Semaphore DBIx::SQLEngine 
+//
+
+Клонируем Druid и вносим необходимые изменения
+
+	git clone https://github.com/DRVTiny/Druid.git
+	# Вместо 1.0.1 указываем актуальную версию
+	cp -R /path_to_clonned_app/druid/* /opt/druid/1.0.1
+	ln -s /opt/druid/1.0.1 /opt/druid/current
+	chown -R zabbix. /opt/druid/1.0.1
+	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
+	systemctl daemon-reload
+	# И запускаем все сервисы:
+	service zapi start
+	service druid-ng start
+	service druid-calc-engine start
+
+
+
 Устанавливаем Crystal и шарды
 
 	wget https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
-	dpkg -i https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
-	cd /opt/druid/current && shards install
+	dpkg -i crystal_0.31.1-1_amd64.deb
+	cd /opt/druid/current && shards build
 	
 Создаем конфиг виртуального хоста в /etc/apache2/sites-available
 
