@@ -18,7 +18,7 @@ Druid можно располагать как на одном хосте с Zab
 
 Создаем конфиг для zabbix API
 
-	mkdir /etc/zabbix/api
+	mkdir /etc/zabbix/api -p
 	touch /etc/zabbix/api/setenv.conf
 
 Содержимое конфига
@@ -32,6 +32,16 @@ Druid можно располагать как на одном хосте с Zab
 	ZBX_PASS='password'
 	ZBX_SERVER='x.x.x.x'
 
+Клонируем Druid и вносим необходимые изменения
+
+	git clone https://github.com/DRVTiny/Druid.git
+	# Вместо 1.0.1 указываем актуальную версию
+	cp -R /path_to_clonned_app/druid/* /opt/druid/1.0.1
+	ln -s /opt/druid/1.0.1 /opt/druid/current
+	chown -R zabbix. /opt/druid/1.0.1
+	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
+	systemctl daemon-reload
+
 Устанавливаем cpanminus и модули perl
 
 	apt install cpanminus
@@ -43,7 +53,7 @@ apt install cpanminus libdbd-mysql-perl libmojolicious-perl libevent-dev libeven
 
 ln -s /usr/bin/hypnotoad /usr/local/bin/hypnotoad
 
-mkdir /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/
+mkdir /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/ -p
 
 cp /opt/druid/current/engine/lib/cmn/Config/ShellStyle.pm /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/
 
@@ -56,16 +66,8 @@ cpanm Scalar::Util::LooksLikeNumber DBI JSON JSON::XS LWP::UserAgent URI::Encode
 cpanm --force POSIX::RT::Semaphore DBIx::SQLEngine 
 //
 
-Клонируем Druid и вносим необходимые изменения
+Запускаем все сервисы:
 
-	git clone https://github.com/DRVTiny/Druid.git
-	# Вместо 1.0.1 указываем актуальную версию
-	cp -R /path_to_clonned_app/druid/* /opt/druid/1.0.1
-	ln -s /opt/druid/1.0.1 /opt/druid/current
-	chown -R zabbix. /opt/druid/1.0.1
-	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
-	systemctl daemon-reload
-	# И запускаем все сервисы:
 	service zapi start
 	service druid-ng start
 	service druid-calc-engine start
