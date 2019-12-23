@@ -7,6 +7,7 @@ Apache с включенным mod_proxy.
 Perl и его модули (список модулей и дополнительного ПО будет описан в разделе "Установка")
 
 Druid можно располагать как на одном хосте с Zabbix, так и на каком-то отдельном. Взаимодействие с заббиксом происходит через API.
+В случае установки на отдельном хосте необходимо добавить пользователя, от имени которого будут запускаться сервисы Druid, в данной инструкции это будет zabbix.
 
 Установка
 =========
@@ -16,28 +17,9 @@ Druid можно располагать как на одном хосте с Zab
 	apt install apache2
 	a2enmod proxy
 
-Устанавливаем cpanminus и модули perl
-
-	apt install cpanminus
-	cpanm AnyEvent EV IO::Socket::SSL JSON Log4perl Log4perl::KISS Log::Dispatch Log::Log4perl Mojolicious Mojo::Log::Clearable Mojo::Redis Mojo::Redis2 POSIX::RT::Semaphore Redis::BCStation Redis::Fast Spread Tag::DeCoder Test Test::Pod Utils ZAPI
-
-Клонируем Druid и вносим необходимые изменения
-
-	git clone https://github.com/DRVTiny/Druid.git
-	# Вместо 1.0.1 указываем актуальную версию
-	cp -R /path_to_clonned_app/druid/* /opt/druid/1.0.1
-	ln -s /opt/druid/1.0.1 /opt/druid/current
-	chown -R zabbix. /opt/druid/1.0.1
-	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
-	systemctl daemon-reload
-	# И запускаем все сервисы:
-	service zapi start
-	service druid-ng start
-	service druid-calc-engine start
-
 Создаем конфиг для zabbix API
 
-	mkdir /etc/zabbix/api
+	mkdir /etc/zabbix/api -p
 	touch /etc/zabbix/api/setenv.conf
 
 Содержимое конфига
@@ -51,11 +33,45 @@ Druid можно располагать как на одном хосте с Zab
 	ZBX_PASS='password'
 	ZBX_SERVER='x.x.x.x'
 
-Устанавливаем Crystal и шарды
+Клонируем Druid и вносим необходимые изменения
+
+	mkdir /opt/druid/1.0.1 -p
+	ln -s /opt/druid/1.0.1 /opt/druid/current
+	# Вместо 1.0.1 указываем актуальную версию
+	git clone https://github.com/DRVTiny/Druid.git /opt/druid/current
+	chown -R zabbix. /opt/druid/1.0.1
+	cp /opt/druid/current/contrib/redhat/*.service /etc/systemd/system
+	systemctl daemon-reload
+
+Устанавливаем необходимые пакеты
+
+	apt install cpanminus libdbd-mysql-perl libmojolicious-perl libevent-dev libevent-extra-2.1-6 libevent-openssl-2.1-6 libevent-pthreads-2.1-6 libpcre16-3 libpcre3-dev libpcre32-3 libpcrecpp0v5 pkg-config libcrypto++-dev libcrypto++6 libssl-dev redis zlib1g-dev
+
+Переносим perl-модуль из комлпекта поставки по одному из стандартных путей, например, таким образом
+
+	mkdir /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/ -p
+	cp /opt/druid/current/engine/lib/cmn/Config/ShellStyle.pm /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/
+
+Устанавливаем модули perl
+
+	cpanm Scalar::Util::LooksLikeNumber DBI JSON JSON::XS LWP::UserAgent URI::Encode boolean enum DBIx::Connector Log::Log4perl Mojo::Log::Clearable AnyEvent Mojo::Redis2 Redis::Fast Data::MessagePack
+	
+	cpanm --force POSIX::RT::Semaphore DBIx::SQLEngine
+
+Создаем симлинк на hypnotoad
+
+	ln -s /usr/bin/hypnotoad /usr/local/bin/hypnotoad
+
+Создаем файл лога zapi и выдаем права пользователю
+
+	mkdir /opt/druid/current/zapi/log && touch /opt/druid/current/zapi/log/app.log
+	chown -R zabbix. /opt/druid/current/zapi/log
+
+Устанавливаем Crystal и шарды, компилим druid-ng.
 
 	wget https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
-	dpkg -i https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
-	cd /opt/druid/current && shards install
+	dpkg -i crystal_0.31.1-1_amd64.deb
+	cd /opt/druid/current && shards build
 	
 Создаем конфиг виртуального хоста в /etc/apache2/sites-available
 
@@ -74,15 +90,20 @@ Druid можно располагать как на одном хосте с Zab
 
 	VHOST=example.com
 	mkdir -p /var/www/vhosts/${VHOST}/{log,site}
-	tar -C /var/www/vhosts/${VHOST}/site xjfv /path_to_clonned_druid/contrib/frontend/rsdash.tbz2 
+	tar xjfv /opt/druid/current/contrib/frontend/rsdash.tbz2 -C /var/www/vhosts/${VHOST}/site 
 	chown -R www-data. /var/www/vhosts/${VHOST}
-	a2ensite 00-example.com.conf
+	a2ensite 00-${VHOST}.conf
 	service apache2 restart
 
 Параметры фронтенда можно указать в config.js
 
-	/var/www/vhosts/example.com/site/js/rsdashboardpanes/config.js
+	/var/www/vhosts/${VHOST}/site/js/rsdashboardpanes/config.js
 
+Запускаем все сервисы:
+
+	service zapi start
+	service druid-ng start
+	service druid-calc-engine start
 	
 Инструменты и команды
 =====================
