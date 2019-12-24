@@ -10,7 +10,7 @@ use enum qw(DBH ZENV ZVERSION DBTYPE DBHCONF GET_LDBH);
 use constant ZAPI_CONFIG	=>	'/etc/zabbix/api/setenv.conf';
 use constant DFLT_DB_ENGINE	=>	'mysql';
 use constant SQL_DBMS_NAME	=>    	17;
-use constant DFLT_DBH_CLASS	=>	'DBIx::Connector';
+use constant DFLT_DBH_CLASS	=>	'DBIx::RetryOverDisconnects';
 use constant DFLT_ZBX_VERSION	=> 	'40200';
 
 use Try::Tiny;

@@ -98,10 +98,11 @@ my $json = JSON::XS->new;
 
 sub new {
     my ($class, %pars) = @_;
-    my $zapi = ZAPI->new(undef, 'DBIx::SQLEngine');
+    my $zapi = ZAPI->new;
     # $dbhR will be Instance of DBIx::SQLEngine::* (driver for target database) by default
     my $dbhR = $zapi->dbh;
-    ref($dbhR) =~ /^DBI(x::SQLEngine|::db)/ or die sprintf 'Cant work with dbh provided by ZAPI instanciated not from DBIx::SQLEngine or DBI::db classes, but received inastance of <<%s>> class instead. Please check DB_PERL_PKG option in your ZAPI configuration', ref($dbhR);
+    $dbhR->isa('DBI::db') or 
+        die sprintf qq[Cant work with dbh provided by ZAPI: it does not implement DBI::db interface. We have received instance of <<%s>> class.\nPlease check DB_PERL_PKG option in your ZAPI configuration.], ref($dbhR);
 #    print Dumper \%zobjTypes; exit;
     my $logger = sub {
         my $L = shift;
@@ -189,7 +190,14 @@ EOLOGCONF
             no strict 'refs';
             $query =~ s%\{\{([^}(]+)\((.*?)\)\}\}%$1->($slf,split(/,\s*/,$2))%gex;
         }
-        $sqlSt{ $sqlOpName } = $dbhR->prepare($query);
+        my $sth = $sqlSt{ $sqlOpName } = $dbhR->prepare($query);
+        blessed($sth) and $sth->isa('DBI::st') 
+            or logdie_('got invalid prepared statement for query <<%s>>: it %s', 
+                   $query,
+                   blessed($sth)
+                   ? 'does not implement DBI::st interface'
+                   : 'is not object at all'
+               )
     }
     
     my $stGetUnderRootSvcs = $sqlSt{'svcGetIDsOfRootDeps'};
@@ -372,8 +380,8 @@ sub reloadCache2 {
     }
 
     my $res = $slf->writeZObjs2SepDbs(\%zo, \%zobjTypes);
-    defined($res->[0]) or logdie_ 'Error while initializing cache-level-2:', $res->[1]{'error'};
-    
+    defined($res->[0]) 
+        or logdie_ 'Error while initializing cache-level-2:', $res->[1];
     return $opt{'mem_safe'} ? DONE : \%zo;
 }
 
@@ -407,16 +415,16 @@ sub writeZObjs2SepDbs {
         }
         $redC->select( $slf->('cache3redisDbN') );
         $redC->set('reload_ts', Time::HiRes::time);
+        [1]
     } catch {
         my $err = $_;
-        error_ "Catched error: $err";
-        $redC->discard;
-        return [
+#        error_ "Catched error: $err";
+        eval { $redC->discard };
+        +[
             undef,
-            { 'error' => sprintf 'Cache init: error while trying to write objects of type "%s" to Redis Db #%d: %s', $ztype, $redisDbIndex, $err }
+            sprintf 'Cache init: error while trying to write objects of type "%s" to Redis Db #%d: %s', $ztype, $redisDbIndex, $err
         ]
-    };
-    return [1]
+    }
 } # <- writeZObjs2SepDbs()
 
 sub actualizeHosts {
@@ -891,9 +899,9 @@ sub AUTOLOAD {
 
 sub DESTROY {
     my $slf = shift;
-    $slf->('dbhSource')->disconnect;
-    
-    my $locks = $slf->('semlocks');    
+    my $dbh = $slf->('dbhSource');
+    $dbh->disconnect if defined($dbh) and blessed($dbh);
+    my $locks = $slf->('semlocks');
     return 1 unless is_plain_hashref($locks) and %{$locks};
     debug_ 'Removing ZObj semlocks';
     for my $lock (grep { ref($_) eq 'POSIX::RT::Semaphore::Named' } values %{$locks}) {
@@ -973,8 +981,8 @@ sub __hp_timer {
 }
 
 sub __get_sth {
-    ref(my $sth = eval { $_[0]->('st')->{$_[1]} }) eq 'DBI::st'
-        or logdie_( '%s statement unknown or was not prepared', $_[1] );
+    my $sth = eval { $_[0]->('st')->{$_[1]} }
+        or logdie_( '%s statement was not prepared', $_[1] );
     return $sth
 }
 
