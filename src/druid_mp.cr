@@ -66,6 +66,8 @@ EOSCRIPT
   end
   zenv = Dotenv.load(path: setenv_conf)
   children_procs = [] of Process
+  # flush cache before use
+  Redis.new(database: REDIS_CACHE_DBN).flushdb
   N_PROCS.times do
     children_procs << (child_p = Process.fork do
       log, fh_log = LogHelper.get_logger(log_file)
