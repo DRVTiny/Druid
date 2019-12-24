@@ -3,9 +3,10 @@ use 5.16.1;
 use strict;
 use warnings;
 use boolean;
+our $VERSION = 0.5.0;
 
 use constant { YES => 1, NO => 0 };
-use enum qw(DBH ZENV ZVERSION DBTYPE DBHCONF);
+use enum qw(DBH ZENV ZVERSION DBTYPE DBHCONF GET_LDBH);
 use constant ZAPI_CONFIG	=>	'/etc/zabbix/api/setenv.conf';
 use constant DFLT_DB_ENGINE	=>	'mysql';
 use constant SQL_DBMS_NAME	=>    	17;
@@ -13,16 +14,38 @@ use constant DFLT_DBH_CLASS	=>	'DBIx::Connector';
 use constant DFLT_ZBX_VERSION	=> 	'40200';
 
 use Try::Tiny;
-use Ref::Util qw(is_hashref is_arrayref is_scalarref is_plain_arrayref is_plain_hashref);
+use Ref::Util qw(is_hashref is_arrayref is_scalarref is_plain_arrayref is_plain_hashref is_coderef is_plain_coderef);
 use List::Util qw(first);
 use Config::ShellStyle;
 use Carp qw(confess);
 use Data::Dumper;
 
 my %acptDbhClasses = (
+    'DBI::db' => +{
+        'load_class' => 'DBI',
+        'constructor' => 'connect',
+        'get_ldbh' => sub { 
+            $_[0]->ping or $_[0] = $_[0]->clone;
+            $_[0]
+        },
+    },
     'DBIx::Connector' => +{
         'get_ldbh' => sub { $_[0]->dbh },
-        'tune' => sub { $_[0]->mode('fixup') },
+        'tune' => sub { $_[0]->mode('fixup') },        
+    },
+    'DBIx::RetryOverDisconnects' => +{
+        'constructor' => 'connect',
+        'get_ldbh' => sub { $_[0] },
+        'append2options' => {
+            'ReconnectRetries' 	=> 20,
+            'ReconnectInterval' => 1,
+            'ReconnectTimeout'  => 10,
+        },
+        'tune' => sub {
+            $_[0]->set_callback('afterReconnect' => sub {
+                say STDERR 'Database was disconnected, but DBIx::RetryOverDisconnects reconnected succesfully'
+            })
+        }
     },
     'DBIx::SQLEngine' => +{
         'get_ldbh' => sub { $_[0]->get_dbh }
@@ -57,8 +80,13 @@ sub new {
     my $dbProps = $dbPropsByType->{$dbType} // die 'dont know how to work with database type ' . $dbType;
     my $dbhConf = $acptDbhClasses{$dbhClass //= $zenv->{'DB_PERL_PKG'} // DFLT_DBH_CLASS};
     $dbhConf or die "dbh class $dbhClass is not acceptable here, use one of: " . join(', ' => keys %acptDbhClasses) . ' instead';
-    $INC{$dbhClass =~ s%::%/%gr} or eval "require $dbhClass" or die "Can't load $dbhClass: $@";
-    my $edbh = $dbhClass->new(
+    my $loadClass = $dbhConf->{'load_class'} // $dbhClass;
+    $INC{($loadClass =~ s%::%/%gr) . '.pm'} 
+        or eval "require $loadClass"
+            or die "Can't load $dbhClass: failed to require it's loader lass <<$loadClass>>: $@";
+    my $crInitDBH = \&{$loadClass . '::' . ($dbhConf->{'constructor'} // 'new')};
+    my $edbh = $crInitDBH->($loadClass =>
+    # Will use DB_CONN_OPTIONS(is arrayref) OR, if DB_CONN_OPTIONS undefined or is not arrayref, - use the result of sub {[]}->()
         @{iif_arrayref($zenv->{'DB_CONN_OPTIONS'}, sub { [
             sprintf( $dbProps->{'dsnTemplate'}, @{$zenv}{qw/DB_HOST DB_NAME/} ),
             first_of($zenv, qw/:DB_ USER LOGIN/),
@@ -66,7 +94,7 @@ sub new {
         ]})},
         +{
             'RaiseError' => true,
-            $dbProps->{'append2options'} ? %{$dbProps->{'append2options'}} : (),
+            (map { exists($_->{'append2options'}) && is_hashref($_->{'append2options'}) ? %{$_->{'append2options'}} : () } $dbProps, $dbhConf),
             exists $dbProps->{'after_connect_do'}
             ?
                 ('Callbacks' => {
@@ -81,10 +109,17 @@ sub new {
     );
     if ( $dbhConf->{'tune'} ) {
         $_->($edbh) for @{is_plain_arrayref($dbhConf->{'tune'}) ? $dbhConf->{'tune'} : [$dbhConf->{'tune'}]}
-    } 
-    my $ldbh = $dbhConf->{'get_ldbh'}->($edbh);
+    }
+    my $crGetLDBH =
+        is_coderef( $dbhConf->{'get_ldbh'} )
+            ? sub { $dbhConf->{'get_ldbh'}->($edbh) }
+            : $edbh->isa('DBI::db')
+                ? sub { $edbh }
+                : die  "class $dbhClass could not provide low-level database handler";
+    my $ldbh = $crGetLDBH->();
+    my $crGetInfo = $ldbh->can('get_info') or die "low-level dbh provided by ${dbhClass} does not support method get_info()"; 
     my $zbxVersion = $zenv->{'DB_RESTRICTED'} ? DFLT_ZBX_VERSION : $ldbh->selectall_arrayref('SELECT mandatory FROM dbversion')->[0][0];
-    bless [$edbh, $zenv, $zbxVersion, lc $ldbh->get_info(SQL_DBMS_NAME), $dbhConf] => (ref($class) || $class)
+    bless [$edbh, $zenv, $zbxVersion, lc($crGetInfo->($ldbh, SQL_DBMS_NAME)), $dbhConf, $crGetLDBH] => (ref($class) || $class)
 }
 
 sub fixed_table_name {
@@ -98,7 +133,7 @@ sub fixed_table_name {
 }
 
 sub dbh {	$_[0][DBH] 	}
-sub ldbh {	$_[0][DBHCONF]->{'get_ldbh'}->($_[0][DBH]) }
+sub ldbh {	$_[0][GET_LDBH]->() }
 sub zenv {	$_[0][ZENV] 	}
 sub dbname {  	$_[0][ZENV]{'DB_NAME'} }
 sub zversion {	$_[0][ZVERSION] }
@@ -131,20 +166,22 @@ sub __dbi_selectall_arrayref {
 sub selectall_arrayref {
     state $switch_on_dbh_class = [
         [qr/^DBI::db$/ => sub { 
-            my $dbh = $_[0][DBH];
-            $dbh->ping or $_[0][DBH] = $dbh = $dbh->clone;
+            my $dbh = $_[0]->ldbh;
             unshift @_, shift->[DBH];
             &__dbi_selectall_arrayref
         }],
         [qr/^DBIx::Connector$/ => sub {
             my $dbh = shift->[DBH];
             my $args = \@_;
-            say 'before $dbh->run';
             $dbh->run('fixup' => sub {
-                printf "ZAPI: running __dbi_selectall_arrayref in fixup mode handler %s => %s\n", ref($_), Dumper($args);
+#                printf "ZAPI: running __dbi_selectall_arrayref in fixup mode handler %s => %s\n", ref($_), Dumper($args);
                 __dbi_selectall_arrayref($_ => @{$args})
             });
             
+        }],
+        [qr/^DBIx::RetryOverDisconnects/ => sub {
+            unshift @_, shift->[DBH];
+            &__dbi_selectall_arrayref
         }],
         [qr/^DBIx::SQLEngine(?:$|::)/ => sub {
             my @args = ($_[1], [], 'fetchall_hashref');
