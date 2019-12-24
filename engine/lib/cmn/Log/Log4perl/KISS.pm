@@ -24,7 +24,7 @@ BEGIN {
     
     @logSevs = LOG_SEVERITIES;
     %logMethodDefs = (
-        'logdie' => [undef, sub { confess($_[1]) }, $FATAL]
+        'logdie' => [undef, sub { die $_[1] }, $FATAL]
     );
     @logMethods = keys %logMethodDefs;
     
