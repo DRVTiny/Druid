@@ -15,7 +15,7 @@ Druid можно располагать как на одном хосте с Zab
 Устанавливаем apache2 и активируем mod_proxy
 
 	apt install apache2
-	a2enmod proxy
+	a2enmod proxy_http
 
 Создаем конфиг для zabbix API
 
