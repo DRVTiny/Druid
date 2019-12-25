@@ -1,0 +1,41 @@
+/**
+ * Config file.
+ * @version 0.1
+ */
+var dojoConfig = {
+                                async : true,
+                                parseOnLoad: false,
+                                baseUrl:'js/',
+                                packages:[
+                                                        { name:'Connector',location:'rsdashboardpanes', main:'Connector'},
+                                                        { name:'Dashboard',location:'rsdashboardpanes', main:'Dashboard'},
+                                                        { name:'DataStore',location:'rsdashboardpanes', main:'DataStore'},
+                                                        { name: "dojo", location: "dojotoolkit/dojo" },
+                                                        { name: "dijit", location: "dojotoolkit/dijit" },
+                                                        { name: "dojox", location: "dojotoolkit/dojox" }
+                                ]
+                        };
+var config = {
+        //dataApiUrl : "http://dc02-vm-inzbxsrv01.dc.nspk.ru/druid/service/",                   //Andrey Konovalov API, tree data
+        //triggerDescriptionsApiUrl : "http://dc02-vm-inzbxsrv01.dc.nspk.ru/druid/triggers/",   //zabbix API url, trigger data. 
+
+        //dataApiUrl : "http://localhost:8080/DS/svc_res4redis.json",//Andrey Konovalov API, tree data
+        dataApiUrl : "/api/service/",//Andrey Konovalov API, tree data
+        triggerDescriptionsApiUrl : "/api/triggers", //zabbix API url, trigger data.
+        rootId : 's0',
+        updateInterval : 1000*60,//upd interval in ms
+        //troubleMode : {show:'triggers'}, //show :triggers|1st level childservices
+        troubleMode : {show:'services'},
+        escalationLevel : 0, // notice level
+        lvlDetailCfg:{
+                        0:{onlyTrouble:false,depth:1},
+                        1:{onlyTrouble:false,depth:2},
+                        2:{onlyTrouble:false,depth:3},
+                        3:{onlyTrouble:false,depth:4},
+                        4:{onlyTrouble:false,depth:5},
+                        5:{onlyTrouble:false,depth:6},
+                        6:{onlyTrouble:false,depth:7},
+                        7:{onlyTrouble:false,depth:8},
+                        8:{onlyTrouble:false,depth:9}
+        }
+}

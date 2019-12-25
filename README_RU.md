@@ -54,7 +54,7 @@ Druid можно располагать как на одном хосте с Zab
 
 Устанавливаем модули perl
 
-	cpanm Scalar::Util::LooksLikeNumber DBI JSON JSON::XS LWP::UserAgent URI::Encode boolean enum DBIx::Connector Log::Log4perl Mojo::Log::Clearable AnyEvent Mojo::Redis2 Redis::Fast Data::MessagePack
+	cpanm Scalar::Util::LooksLikeNumber DBI JSON JSON::XS LWP::UserAgent URI::Encode boolean enum DBIx::Connector Log::Log4perl Mojo::Log::Clearable AnyEvent Mojo::Redis2 Redis::Fast Data::MessagePack DBIx::RetryOverDisconnects
 	
 	cpanm --force POSIX::RT::Semaphore DBIx::SQLEngine
 

@@ -1,0 +1,10 @@
+<VirtualHost {{ vhost }}:80>
+  ServerName {{ vhost }}
+  DocumentRoot /var/www/vhosts/{{ vhost }}/site
+  ErrorLog /var/www/vhosts/{{ vhost }}/log/error.log
+  CustomLog /var/www/vhosts/{{ vhost }}/log/acces.log combined
+  ProxyPass /api http://localhost:3030 keepalive=on
+  ProxyPassReverse /api http://localhost:3030
+  ProxyPass /trg http://localhost:8099 keepalive=on
+  ProxyPassReverse /trg http://localhost:8099
+</VirtualHost>
