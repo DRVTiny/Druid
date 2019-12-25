@@ -1,0 +1,5 @@
+---
+- hosts: druid
+  user: "{{ remote_user }}"
+  roles:
+    - soft

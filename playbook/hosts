@@ -1,0 +1,6 @@
+[druid]
+#Insert hostname or IP
+
+[druid:vars]
+ansible_user=username_here
+ansible_become=true

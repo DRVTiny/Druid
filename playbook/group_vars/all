@@ -1,0 +1,8 @@
+vhost: hostname.fqdn
+db_ip: 10.10.10.10
+db_login: zabbix
+db_pass: zabbix
+api_login: Admin
+api_pass: zabbix
+zabbix: zabbix-hostname.fqdn
+remote_user: username

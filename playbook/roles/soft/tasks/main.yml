@@ -1,0 +1,248 @@
+- name: Install packages
+  apt:
+    name: "{{ pkg }}"
+    state: latest
+  vars:
+    pkg:
+    - apache2
+    - cpanminus
+    - libdbd-mysql-perl
+    - libmojolicious-perl
+    - libevent-dev
+    - libevent-extra-2.1-6
+    - libevent-openssl-2.1-6
+    - libevent-pthreads-2.1-6
+    - libpcre16-3
+    - libpcre3-dev
+    - libpcre32-3
+    - libpcrecpp0v5
+    - pkg-config
+    - libcrypto++-dev
+    - libcrypto++6
+    - libssl-dev
+    - redis
+    - zlib1g-dev
+  tags: pkg
+
+- name: a2enmod proxy_http
+  apache2_module:
+    state: present
+    name: proxy_http
+
+- name: Create zabbix group
+  group:
+    name: zabbix
+    state: present
+
+- name: Create zabbix user if does not exists
+  user:
+    name: zabbix
+    group: zabbix
+
+- name: Create zapi directory
+  file:
+    path: /etc/zabbix/api
+    state: directory
+    mode: '0755'
+
+- name: Copy setenv.conf
+  template:
+    src: setenv.conf.j2
+    dest: /etc/zabbix/api/setenv.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create directory for Druid
+  file:
+    path: /opt/druid/1.0.1
+    state: directory
+    mode: '0755'
+    owner: zabbix
+    group: zabbix
+
+- name: Create symlink to Druid directory
+  file:
+    src: /opt/druid/1.0.1
+    dest: /opt/druid/current
+    owner: zabbix
+    group: zabbix
+    state: link
+
+- name: Clone from Github
+  git:
+    repo: https://github.com/DRVTiny/Druid.git
+    version: master
+    dest: /opt/druid/current
+    force: yes
+
+- name: Change ownership
+  file:
+    path: /opt/druid
+    state: directory
+    recurse: yes
+    owner: zabbix
+    group: zabbix
+
+- name: Copy systemd services to default directory
+  copy:
+    remote_src: yes
+    src: /opt/druid/current/contrib/redhat/{{ item }}
+    dest: /etc/systemd/system/
+    owner: root
+    group: root
+    mode: '0644'
+  with_items:
+    - druid-calc-engine.service
+    - druid-ng.service
+    - zapi.service
+
+- name: Daemon-reload
+  systemd:
+    daemon_reload: yes
+    
+
+- name: Create ShellStyle directory
+  file:
+    path: /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config
+    state: directory
+    mode: '0755'
+
+- name: Copy ShellStyle
+  copy:
+    remote_src: yes
+    src: /opt/druid/current/engine/lib/cmn/Config/ShellStyle.pm
+    dest: /usr/local/lib/x86_64-linux-gnu/perl/5.26.1/Config/ShellStyle.pm
+    mode: '0755'
+
+#- name: Test install
+#  cpanm: 
+#    name: Scalar::Util::LooksLikeNumber
+
+- name: Install Perl modules
+  cpanm:
+    name: "{{ item }}"
+  with_items:
+    - Scalar::Util::LooksLikeNumber
+    - DBI
+    - JSON
+    - JSON::XS
+    - LWP::UserAgent
+    - URI::Encode
+    - boolean
+    - enum
+    - DBIx::Connector
+    - Log::Log4perl
+    - Mojo::Log::Clearable
+    - AnyEvent
+    - Mojo::Redis2
+    - Redis::Fast
+    - Data::MessagePack
+    - DBIx::RetryOverDisconnects
+
+- name: Force install Perl modules
+  cpanm:
+    name: "{{ item }}"
+    notest: yes
+  with_items:
+    - POSIX::RT::Semaphore
+    - DBIx::SQLEngine
+
+- name: Create hypnotoad symlink
+  file: 
+    src: /usr/bin/hypnotoad
+    dest: /usr/local/bin/hypnotoad
+    owner: root
+    group: root
+    state: link
+
+- name: Create zapi log directory
+  file:
+    path: /opt/druid/current/zapi/log
+    state: directory
+    owner: zabbix
+    group: zabbix
+    mode: '0755'    
+
+- name: Create zapi log file
+  file:
+    path: /opt/druid/current/zapi/log/app.log
+    state: touch
+    owner: zabbix
+    group: zabbix
+    mode: '0644'
+
+#- name: Get crystal package
+#  get_url:
+#    url: https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
+#    dest: /tmp/crystal_0.31.1-1_amd64.deb
+#    mode: '0755'
+
+- name: Install crystal
+  apt:
+    deb: https://github.com/crystal-lang/crystal/releases/download/0.31.1/crystal_0.31.1-1_amd64.deb
+  
+- name: Install shards and build druid-ng
+  shell: shards build
+  args:
+    chdir: /opt/druid/current/
+
+- name: Change druid-ng owner
+  file:
+    path: /opt/druid/current/bin/druid-ng
+    owner: zabbix
+    group: zabbix
+
+- name: Create virtual host
+  template:
+    src: vhost.conf.j2
+    dest: /etc/apache2/sites-available/00-{{ vhost }}.conf
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Create frontend directories
+  file:
+    path: /var/www/vhosts/{{ vhost }}/{{ item }}
+    owner: www-data
+    group: www-data
+    mode: '0755'
+    state: directory
+  with_items:
+    - site
+    - log
+
+- name: Unpack frontend
+  unarchive:
+    src: /opt/druid/current/contrib/frontend/rsdash.tbz2
+    dest: /var/www/vhosts/{{ vhost }}/site
+    remote_src: yes
+
+- name: Change ownership
+  file:
+    path: /var/www/vhosts/{{ vhost }}
+    state: directory
+    recurse: yes
+    owner: www-data
+    group: www-data
+
+- name: Enable virtual host
+  shell: a2ensite 00-{{ vhost }}.conf
+
+- name: Change parameters in config.js
+  template:
+    src: config.js.j2
+    dest: /var/www/vhosts/{{ vhost }}/site/js/rsdashboardpanes/config.js  
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Restart services
+  systemd:
+    state: restarted
+    name: "{{ item }}"
+  with_items:
+    - apache2
+    - zapi
+    - druid-ng
+    - druid-calc-engine
