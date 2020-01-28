@@ -979,10 +979,10 @@ sub gen_svc_tree_branch {
                   $svc->{'genstat'} = _E('Cant recreate service: there are more than one services with the same name under same parent (so we dont know what service to delete)'),
                   return
                 }
-                $self->delete( $sameSvcs[0]{'serviceid'} );
+                $self->delete( $sameSvcs[0] );
                 $flSameSvcDel = 1;
             } else {
-                $svc->{'serviceid'} = $sameSvcs[0]{'serviceid'};
+                $svc->{'serviceid'} = $sameSvcs[0];
                 $svc->{'genstat'}   = { 'ok' => 'exists' };
                 goto RECURSE_NODES;
             }
