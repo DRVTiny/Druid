@@ -1,6 +1,7 @@
+require "log"
 module DruidWebApp
   class LogHelper
-    def self.get_logger(file : (IO | String | Nil) = STDERR, log_level = Logger::DEBUG)
+    def self.configure_logger(file : (IO | String | Nil) = STDERR, log_level = Log::Severity::Debug)
       fh = 
         case file
         when IO
@@ -10,38 +11,44 @@ module DruidWebApp
         else
           STDERR
         end
-      log_hndl = Logger.new(fh, log_level)
-      log_hndl.progname = AppName.exec_name
-      log_hndl.formatter = Logger::Formatter.new do |severity, datetime, progname, message, io|
-        logsev = severity.unknown? ? "ANY" : severity.to_s
+      
+      
+      log_fmt = Log::Formatter.new do |log_entry, io|
+        log_sev = log_entry.severity.to_s.upcase
+        ts = log_entry.timestamp
         io << [
-          datetime.to_s("%H:%M:%S"),
-          datetime.to_s("%d-%m-%Y"),
-          logsev,
+          ts.to_s("%H:%M:%S"),
+          ts.to_s("%d-%m-%Y"),
+          log_sev,
           "pid=#{Process.pid}, fbr=#{Fiber.current.object_id}",
-          message
-        ].join(" | ")       
+          log_entry.message
+        ].join(" | ")
       end
-      {log_hndl, fh}
+      log_back = Log::IOBackend.new(fh, formatter: log_fmt)
+      Log.setup("*", log_level, log_back)
+      Log.progname = AppName.exec_name
+      fh
     end
   end
   
   class KemaLoger < Kemal::LogHandler
-    def initialize(@log_hndl : Logger, @io : IO = STDERR)
+    def initialize(@io : IO = STDERR)
     end
     
     def call(context : HTTP::Server::Context)
-      @log_hndl.info({
-        context.response.status_code,
-        context.request.method,
-        context.request.resource,
-        elapsed_text(Time.measure { call_next(context) })
-      }.join(' '))
+      Log.info { 
+        {
+          context.response.status_code,
+          context.request.method,
+          context.request.resource,
+          elapsed_text(Time.measure { call_next(context) })
+        }.join(' ')
+      }
       context
     end
     
     def write(message : String)
-      @log_hndl.info(message.chomp)
+      Log.info { message.chomp }
       @io
     end
   end

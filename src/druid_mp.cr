@@ -1,7 +1,7 @@
 require "json"
 require "kemal"
 require "app_name"
-require "logger"
+require "log"
 require "option_parser"
 require "zabipi"
 require "dotenv"
@@ -37,8 +37,8 @@ module DruidWebApp
   children_procs = [] of Process
   N_PROCS.times do
     children_procs << (child_p = Process.fork do
-      log, fh_log = LogHelper.get_logger(log_file)
-      log.info("Starting Kemal worker process")
+      fh_log = LogHelper.configure_logger(log_file)
+      Log.info { "Starting Kemal worker process" }
       druid = if (t = svc_deps_ttl) && t > 0
                 Druid.new(svc_deps_ttl: t)
               else
@@ -69,7 +69,7 @@ module DruidWebApp
         begin
           if tids = env.params.url["triggerids"]? || env.params.query["triggerids"]? || env.params.body["triggerids"]?.try &.as(String)
             triggerids = tids.split(/\s*,\s*/).map { |tid| tid.to_u32 rescue raise "triggerid must be positive integer" }
-            log.debug("requested to get triggers: #{pp triggerids}")
+            Log.debug { "requested to get triggers: #{pp triggerids}" }
             zans = zapi.do("trigger.get", {"triggerids" => triggerids, "expandDescription" => 1, "output" => ["description"]})
             zans.result.as_a.map { |r| {r["triggerid"].as_s.to_u32, r["description"]} }.to_h.to_json(env.response)
           else
@@ -88,25 +88,25 @@ module DruidWebApp
       sgnl_kemal_stop = Channel(Int32).new
       spawn do
         Kemal.config do |cfg|
-          cfg.logger = KemaLoger.new(log, fh_log)
-          log.info("We want to bind Kemal to tcp_port #{tcp_port}")
+          cfg.logger = KemaLoger.new(fh_log)
+          Log.info { "We want to bind Kemal to tcp_port #{tcp_port}" }
           cfg.port = tcp_port.to_i
         end
         Kemal.run do |cfg|
           cfg.server.not_nil!.bind_tcp(host: "localhost", port: tcp_port.to_i, reuse_port: true)
-          #					log.info("But we was binded to tcp_port=#{cfg.server.not_nil!.port}")
+          #					Log.info { "But we was binded to tcp_port=#{cfg.server.not_nil!.port}" }
         end
         sgnl_kemal_stop.send(1)
       end
 
-      log.info("I am a child process with pid #{Process.pid}")
+      Log.info { "I am a child process with pid #{Process.pid}" }
       Signal::TERM.trap do
-        log.warn("Process #{Process.pid} received TERM signal, so we have to emergency cleanup and exit now")
+        Log.warn { "Process #{Process.pid} received TERM signal, so we have to emergency cleanup and exit now" }
         Kemal.stop
         exit(0)
       end
       exit_code = sgnl_kemal_stop.receive
-      log.error("[#{Process.pid}] Ooops. How is that possible?")
+      Log.error { "[#{Process.pid}] Ooops. How is that possible?" }
       exit(1)
     end)
   end
@@ -118,21 +118,20 @@ module DruidWebApp
 	end
 	{% end %}
 	
-  log, _ = LogHelper.get_logger(log_file)
-  log.info("I am a main process with pid #{Process.pid}. Send me HUP signal to terminate Kemal server gracefully")
+  Log.info { "I am a main process with pid #{Process.pid}. Send me HUP signal to terminate Kemal server gracefully" }
 
   x = sgnl_sighup_rcvd.receive
-  log.info("(some) signal received by master process #{Process.pid}. We have to terminate our children (by pid):\n\t[" + children_procs.map { |p| p.pid }.join(", ") + "]")
+  Log.info { "(some) signal received by master process #{Process.pid}. We have to terminate our children (by pid):\n\t[" + children_procs.map { |p| p.pid }.join(", ") + "]" }
 
   children_procs.each do |child_p|
     child_pid = child_p.pid
     if child_p.terminated?
-      log.warn("Child ##{child_pid} already terminated")
+      Log.warn { "Child ##{child_pid} already terminated" }
     else
-      log.debug("Sending signal TERM (15) to process #{child_pid}")
-      child_p.kill
+      Log.debug { "Sending signal TERM (15) to process #{child_pid}" }
+      child_p.terminate
       child_p.wait
     end
-    log.error("Cant terminate child ##{child_pid}") unless child_p.terminated?
+    Log.error { "Cant terminate child ##{child_pid}" } unless child_p.terminated?
   end
 end

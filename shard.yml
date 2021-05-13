@@ -21,7 +21,7 @@ dependencies:
     github: drum445/dotenv
   redis:
     github: stefanwille/crystal-redis
-    version: ~> 2.5.0    
+#    version: ~> 2.5.0
   app_name:
     github: DRVTiny/app_name
    
