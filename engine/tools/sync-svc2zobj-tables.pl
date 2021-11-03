@@ -8,7 +8,11 @@ BEGIN {
         (defined($ENV{'DRUID_MODE'}) && $ENV{'DRUID_MODE'} eq 'development') 
             ? do { 
                 require 'FindBin.pm';
-                my $LD_PATH = $FindBin::Bin . '/../lib'; -d $LD_PATH ? ($LD_PATH) : ()
+                my $slf_lib_pth = $FindBin::Bin . '/../lib';
+                map {
+                  my $incl_d = join('/' => $slf_lib_pth, $_);
+                  -d $incl_d ? ($incl_d) : ()
+                } qw/app cmn/
               }
             : qw(/opt/Perl5/libs /opt/Perl5/libs/x86_64-linux-thread-multi)
 }
@@ -72,15 +76,16 @@ for ($what2do) {
       my $cntChanged;
       while ( my ( $assocClass, $assocAttrs ) = each %descrAssoc ) {
         my $assocTbl = $assocAttrs->{'tbl'};
+        say ">>>>>>>>>>>>> $assocTbl <<<<<<<<<<<<<<";
         unless ( $flCleanInit ) {
-          my ($res) = $dbr->named_query('table_exists', 'subst' => {'table_name' => $assocTbl});
+          my ($res) = $dbr->named_query('table_exists', 'subst' => {'table_name' => \$assocTbl});
           $res->[0]{'count'}
             and warn_( 'Table %s already exists, skipping it', $assocTbl ), next;
         } else {
-          $dbr->named_query('drop_table', 'subst' => {'table_name' => $assocTbl})
+          $dbr->named_query('drop_table', 'subst' => {'table_name' => \$assocTbl})
         }
         
-        $dbr->named_query('create_table', 'subst' => {'table_name' => $assocTbl, 'zobjid_name' => $assocAttrs->{'id'}, 'services_table_name' => 'services'});
+        $dbr->named_query('create_table', 'subst' => {'table_name' => \$assocTbl, 'zobjid_name' => \$assocAttrs->{'id'}, 'services_table_name' => \'services'});
         
         $cntChanged++;
         

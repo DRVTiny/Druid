@@ -4,7 +4,7 @@ use utf8;
 use strict;
 use warnings;
 use boolean;
-use Ref::Util qw(is_hashref is_arrayref is_coderef);
+use Ref::Util qw(is_hashref is_arrayref is_coderef is_scalarref);
 use Scalar::Util::LooksLikeNumber qw(looks_like_number);
 use Scalar::Util qw(blessed);
 use Carp qw(confess);
@@ -99,6 +99,10 @@ my %switchNativeSelect = (
     $dbh->ping or $dbh = $dbh->clone;
     __prep_and_exec($dbh, $method, \$query, $binds);
   },
+  'DBIx::RetryOverDisconnects' => sub {
+    my ($dbh, $method, $query, $binds) = @_;
+    __prep_and_exec($dbh, $method, \$query, $binds);
+  },  
 );
 
 sub __get_ldbh {
@@ -131,9 +135,10 @@ sub new {
 # simple function, ! class method, ! inst method
 sub __db_val {
   my $pv = scalar(@_) == 2 ? \$_[1] : \$_;
+#  say "[[[[[[[[ fmt=$_[0], val=${$pv} ]]]]]]]]]]]]";
   defined( ${$pv} )
     ? (looks_like_number(${$pv}) >> 8)
-      ? $_[0]
+      ? ${$pv}
       : sprintf($_[0], ${$pv})
     : 'NULL'
 }
@@ -150,8 +155,15 @@ sub __open_subst {
         }
       }
     : ('%s', $subst->{$key});
+    
   my $qfmt = $self->{'quote_fmt'};
-  sprintf($fmt => join(',' => map __db_val($qfmt), is_arrayref($ins) ? @{$ins} : ($ins)))
+  sprintf(
+    $fmt => 
+      join(',' =>
+        map { is_scalarref($_) ? $$_ : __db_val($qfmt) }
+          is_arrayref($ins) ? @{$ins} : ($ins)
+      )
+  )
 }
 
 sub compile_query {

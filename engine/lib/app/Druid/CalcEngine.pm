@@ -17,7 +17,6 @@ use Carp 		qw(croak confess);
 use JSON::XS 		qw(encode_json decode_json);
 use lib '/opt/Perl5/libs';
 use Tag::DeCoder;
-use POSIX::RT::Semaphore;
 use Log::Log4perl;
 use Log::Log4perl::KISS;
 use Try::Tiny;
@@ -133,6 +132,7 @@ EOLOGCONF
         'zbxMajorVersion'	=>	{ 'value' => substr($zapi->zversion, 0, 1), 	'protected' => TRUE },
         'servicesOfInterest'	=>	{ 'value' => {}, },
         'underRootServices'  	=>      { 'value' => {}, 'read_only' => TRUE, },
+        'multiInstMode'		=>	{ 'value' => $ENV{'DRUID_CE_MULTI_INSTANCE'},   'read_only' => TRUE },
         'encoder'		=>	{ 'value' => $encoder, 'read_only' => TRUE, },
         'st'			=>	{ 'value' => undef, 'read_only' => TRUE, },
         'semlocks'		=>	{ 'value' => {}, 'protected' => TRUE, },
@@ -517,17 +517,21 @@ sub actualizeTrigValues {
     my $funcName = __fq_func_name;
     ref($slf) eq __PACKAGE__
         or logdie_( '%s(): you must pass object as a first parameter or call this function as object method', $funcName );
-    my $semPath = '/'.$funcName.'_'.($ENV{'LOGNAME'} || $ENV{'USER'} || getpwuid($<));
-    ref(my $lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1)) =~ m/^POSIX::RT/
-        or logdie_("Cant create <<${semPath}>> lock to update triggers safely: " . $!);
-    unless ( $lock->trywait() and $slf->('semlocks')->{$semPath} = $lock) {
-        debug { "SEMVAL($semPath)=".$lock->getvalue() };
-        if ($flags & BM_DEL_SEM_IF_EXIST) {
-            POSIX::RT::Semaphore->unlink($semPath);
-            $lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1);
-            logdie_ 'Cant create lock after unlinking' unless $lock->trywait();
-        } else {
-            logdie_('Another instance of trigger actualization function already running');
+    my $lock;    
+    if ( $slf->get_multiInstMode() ) {
+        require POSIX::RT::Semaphore unless $POSIX::RT::Semaphore::VERSION;
+        my $semPath = '/'.$funcName.'_'.($ENV{'LOGNAME'} || $ENV{'USER'} || getpwuid($<));
+        ref($lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1)) =~ m/^POSIX::RT/
+            or logdie_("Cant create <<${semPath}>> lock to update triggers safely: " . $!);
+        unless ( $lock->trywait() and $slf->('semlocks')->{$semPath} = $lock) {
+            debug { "SEMVAL($semPath)=".$lock->getvalue() };
+            if ($flags & BM_DEL_SEM_IF_EXIST) {
+                POSIX::RT::Semaphore->unlink($semPath);
+                $lock = POSIX::RT::Semaphore->open($semPath, O_CREAT, 0600, 1);
+                logdie_ 'Cant create lock after unlinking' unless $lock->trywait();
+            } else {
+                logdie_('Another instance of trigger actualization function already running');
+            }
         }
     }
     
@@ -586,8 +590,10 @@ sub actualizeTrigValues {
         error { 'Error when updating triggers state:', $_ };
         return { 'error' => "(catched) $_" };
     } finally {
-        $lock->post unless $lock->getvalue > 0;
-        $lock->close;
+        if ( $slf->get_multiInstMode() ) {
+            $lock->post unless $lock->getvalue > 0;
+            $lock->close
+        }
     };
 }
 
@@ -878,9 +884,9 @@ sub doCalcLostFunK {
 
 our $AUTOLOAD;
 sub AUTOLOAD {
-    my $iam = shift;
+    my $iam = $_[0];
     my ($pkg, $what2do, $par) = $AUTOLOAD =~ m/^(.*::)([gs]et)_(.+)$/
-        or confess 'No such method <<'.$AUTOLOAD.'>>';
+        or confess 'No such method <<' . $AUTOLOAD . '>>';
     no strict 'refs';
     unless (exists &{$pkg . 'set_' . $par}) {
         *{$pkg . 'set_' . $par}=sub {

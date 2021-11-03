@@ -97,8 +97,6 @@ EOSQL
   map $_->[0], @{$sthGetTrigger->fetchall_arrayref()};
 }
 
-# Your code goes here ->
-# For example, you may uncomment this line to get "Zabbix server" on STDOUT:
 my $rootSvcID = shift || 0;
 $flDryRun = 1 if @ARGV;
 

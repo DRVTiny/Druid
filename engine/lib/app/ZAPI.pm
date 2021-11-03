@@ -56,20 +56,22 @@ sub new {
     my ($class, $envPathOrRef, $dbhClass) = @_; 
     state $dbPropsByType = {
         'mysql' => {
-            'dsnTemplate' => 'dbi:mysql:host=%s;database=%s',
+            'dsnTemplate' => 'dbi:mysql:host=%s;port=%d;database=%s',
             'append2options' => {
                 'mysql_enable_utf8' 	=> YES,
                 'mysql_auto_reconnect'  => YES,
             },
             'after_connect_do' => [ 'SET NAMES utf8',
                                     'SET SESSION group_concat_max_len=@@max_allowed_packet' ],
+            'default_port'     => 3306
         },
         'postgresql' => {
-            'dsnTemplate' => 'dbi:Pg:host=%s;dbname=%s',
+            'dsnTemplate' => 'dbi:Pg:host=%s;port=%d;dbname=%s',
             'append2options' => {
                 'pg_server_prepare' => NO,
             },
             'after_connect_do' => [ q<SET CLIENT_ENCODING TO 'UTF8'> ],
+            'default_port'     => 5432
         },
     };
     my $zenv = 
@@ -78,6 +80,14 @@ sub new {
             : read_config($envPathOrRef // $ENV{'ZAPI_CONFIG'} || ZAPI_CONFIG);
     my $dbType = lc($zenv->{'DB_TYPE'} // DFLT_DB_ENGINE);
     my $dbProps = $dbPropsByType->{$dbType} // die 'dont know how to work with database type ' . $dbType;
+    
+    if ( my $dbPort = $zenv->{'DB_PORT'} ) {
+        $dbPort =~ /^\d{3,5}$/
+            or die 'Invalid database port number specified in setenv file as a value of [DB_PORT] property. Given, but not acceptable: ', $zenv->{'DB_PORT'}
+    } else {
+        $zenv->{'DB_PORT'} //= ($zenv->{'DB_HOST'} =~ s%:(\d{3,5})$%% ? $1 : undef) // $dbProps->{'default_port'}
+    }
+    
     my $dbhConf = $acptDbhClasses{$dbhClass //= $zenv->{'DB_PERL_PKG'} // DFLT_DBH_CLASS};
     $dbhConf or die "dbh class $dbhClass is not acceptable here, use one of: " . join(', ' => keys %acptDbhClasses) . ' instead';
     my $loadClass = $dbhConf->{'load_class'} // $dbhClass;
@@ -88,7 +98,10 @@ sub new {
     my $edbh = $crInitDBH->($loadClass =>
     # Will use DB_CONN_OPTIONS(is arrayref) OR, if DB_CONN_OPTIONS undefined or is not arrayref, - use the result of sub {[]}->()
         @{iif_arrayref($zenv->{'DB_CONN_OPTIONS'}, sub { [
-            sprintf( $dbProps->{'dsnTemplate'}, @{$zenv}{qw/DB_HOST DB_NAME/} ),
+            sprintf( 
+                $dbProps->{'dsnTemplate'},
+                map { $zenv->{$_} // die 'Database property [' . $_ . '] not defined in your setenv file' } qw/DB_HOST DB_PORT DB_NAME/
+            ),
             first_of($zenv, qw/:DB_ USER LOGIN/),
             first_of($zenv, qw/:DB_ PASS PASSWORD/),            
         ]})},
